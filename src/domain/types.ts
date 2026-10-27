@@ -12,6 +12,8 @@ export interface SourceRef {
 
 export interface Question {
   id: string;
+  /** Identifies the generation request that produced this question. Older imports may not have one. */
+  generationId?: string;
   type: QuestionType;
   stem: string;
   options?: Array<{ id: string; text: string }>;

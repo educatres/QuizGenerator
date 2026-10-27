@@ -3,7 +3,7 @@ import {
 } from 'docx';
 import type { ExamMeta, Question } from '../domain/types';
 import { questionTypeLabels } from '../domain/types';
-import { buildExamVersions, seededShuffle, type ExamVersion } from './exportHtml';
+import { buildExamVersions, seededShuffle, type ExamVersion } from './examVersions';
 
 export type ExamDocumentMode = 'standard' | 'ab';
 

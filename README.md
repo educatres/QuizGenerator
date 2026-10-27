@@ -16,8 +16,8 @@ Exam Studio 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md) �
 3. PDF.js Web Worker、CMap 與 standard fonts；TXT / Markdown / 貼上文字
 4. 內建「AI 概念入門」純文字範例，可一鍵載入並直接測試產題
 5. 單選、複選、是非與簡答題；來源引文會正規化比對並自動校正至實際教材片段
-6. 題目編輯、接受／退回、複製、刪除、排序與版本紀錄
-7. 一般考卷與同題異序 A／B 卷，皆可匯出可編輯 DOCX 或離線 HTML
+6. 每次產題結果以獨立審核分頁保存；支援題目編輯、接受／退回、複製、刪除、排序、版本紀錄與一鍵清空審核區
+7. 一般考卷與同題異序 A／B 卷，皆可匯出可編輯 DOCX
 8. 分卷解答與 JSON 題庫備份
 9. IndexedDB 自動保存、GitHub Pages 自動部署
 

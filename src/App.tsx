@@ -2,15 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp,
   CircleAlert, Copy, Download, Eye, EyeOff, FileCheck2, FilePlus2, FileText, KeyRound, LoaderCircle,
-  Plus, Printer, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
+  Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
 } from 'lucide-react';
 import type { Difficulty, ExamMeta, GenerationSettings, MaterialDocument, ProviderId, Question, QuestionStatus, QuestionType } from './domain/types';
 import { difficultyLabels, now, questionTypeLabels, uid } from './domain/types';
+import { groupQuestionsByGeneration, LEGACY_GENERATION_ID } from './domain/generationBatches';
 import { adapters, clearAllSessionKeys, clearSessionKey, hasSessionKey, setSessionKey } from './providers';
 import type { ModelOption } from './providers/types';
 import { extractPdf, extractTextFile, fromPastedText } from './services/pdfExtract';
 import { clearSnapshot, loadSnapshot, saveSnapshot } from './services/localDb';
-import { createAbPrintHtml, createPrintHtml, downloadBlob, downloadText } from './services/exportHtml';
+import { downloadBlob, downloadText } from './services/download';
 import type { ExamDocumentMode } from './services/exportDocx';
 import { reconcileQuestionSources } from './services/sourceValidation';
 
@@ -25,6 +26,10 @@ const defaultExam: ExamMeta = { title: '課堂學習評量', subtitle: '', durat
 
 function totalRequested(settings: GenerationSettings) { return Object.values(settings.counts).reduce((a, b) => a + b, 0); }
 function formatBytes(bytes: number) { return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
+function formatGenerationTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '時間未知' : new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
 function storedModelConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(MODEL_CONFIG_STORAGE_KEY) || '{}') as { provider?: ProviderId; models?: Partial<Record<ProviderId, string>> };
@@ -50,6 +55,7 @@ export function App() {
   const [pasteText, setPasteText] = useState('');
   const [expandedMaterial, setExpandedMaterial] = useState<string>();
   const [reviewFilter, setReviewFilter] = useState<QuestionStatus | 'all'>('all');
+  const [activeGenerationId, setActiveGenerationId] = useState<string>();
   const [reviewFocus, setReviewFocus] = useState<{ id: string; token: number }>();
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
@@ -72,9 +78,16 @@ export function App() {
 
   const adapter = adapters[provider];
   const allChunks = useMemo(() => materials.flatMap(material => material.chunks), [materials]);
+  const reviewGenerations = useMemo(() => groupQuestionsByGeneration(questions), [questions]);
+  const activeGeneration = reviewGenerations.find(batch => batch.id === activeGenerationId) ?? reviewGenerations.at(-1);
+  const activeQuestions = activeGeneration?.questions ?? [];
   const accepted = questions.filter(q => q.status === 'accepted');
-  const visibleQuestions = questions.filter(q => reviewFilter === 'all' || q.status === reviewFilter);
+  const visibleQuestions = activeQuestions.filter(q => reviewFilter === 'all' || q.status === reviewFilter);
   const canGo = [true, true, materials.length > 0, questions.length > 0, accepted.length > 0];
+  useEffect(() => {
+    if (!reviewGenerations.length) setActiveGenerationId(undefined);
+    else if (!reviewGenerations.some(batch => batch.id === activeGenerationId)) setActiveGenerationId(reviewGenerations.at(-1)?.id);
+  }, [activeGenerationId, reviewGenerations]);
   const announce = (text: string, kind: 'success' | 'error' | 'info' = 'success') => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
     setNotice({ text, kind });
@@ -150,15 +163,26 @@ export function App() {
     try {
       const generated = await adapter.generateQuestions({ model: selectedModels[provider], chunks: allChunks, settings, signal: controller.signal });
       const verified = reconcileQuestionSources(generated, allChunks);
-      const enriched: Question[] = verified.questions.map(q => ({ ...q, id: uid(), status: 'candidate', revision: 1, providerId: provider, modelId: selectedModels[provider], createdAt: now() }));
-      setQuestions(state => [...state, ...enriched]); setStep(3); announce(`已建立 ${enriched.length} 題候選題${verified.repairedCount ? `，並校正 ${verified.repairedCount} 則來源引文` : ''}，請逐題審核。`);
+      const generationId = uid();
+      const generatedAt = now();
+      const enriched: Question[] = verified.questions.map(q => ({ ...q, id: uid(), generationId, status: 'candidate', revision: 1, providerId: provider, modelId: selectedModels[provider], createdAt: generatedAt }));
+      setQuestions(state => [...state, ...enriched]); setActiveGenerationId(generationId); setReviewFilter('all'); setStep(3); announce(`已建立 ${enriched.length} 題候選題${verified.repairedCount ? `，並校正 ${verified.repairedCount} 則來源引文` : ''}，請逐題審核。`);
     } catch (error) { announce((error as Error).message, 'error'); }
     finally { setBusy(''); generationController.current = undefined; }
   }
 
   function updateQuestion(id: string, patch: Partial<Question>) { setQuestions(state => state.map(q => q.id === id ? { ...q, ...patch, revision: q.revision + 1 } : q)); }
-  function moveQuestion(index: number, direction: -1 | 1) {
-    setQuestions(state => { const copy = [...state]; const target = index + direction; if (target < 0 || target >= copy.length) return state; [copy[index], copy[target]] = [copy[target], copy[index]]; return copy; });
+  function moveQuestion(id: string, direction: -1 | 1, generationQuestions: Question[]) {
+    const current = generationQuestions.findIndex(question => question.id === id);
+    const target = current + direction;
+    if (current < 0 || target < 0 || target >= generationQuestions.length) return;
+    const targetId = generationQuestions[target].id;
+    setQuestions(state => {
+      const currentIndex = state.findIndex(question => question.id === id);
+      const targetIndex = state.findIndex(question => question.id === targetId);
+      if (currentIndex < 0 || targetIndex < 0) return state;
+      const copy = [...state]; [copy[currentIndex], copy[targetIndex]] = [copy[targetIndex], copy[currentIndex]]; return copy;
+    });
   }
   function duplicateQuestion(question: Question) { setQuestions(state => [...state, { ...structuredClone(question), id: uid(), stem: `${question.stem}（副本）`, status: 'candidate', revision: 1, createdAt: now() }]); }
   function exportJson() { downloadText('exam-studio.json', JSON.stringify({ version: 1, exportedAt: now(), exam, questions }, null, 2), 'application/json'); }
@@ -175,8 +199,12 @@ export function App() {
     try {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.questions)) throw new Error('JSON 中找不到 questions 陣列。');
-      setQuestions(data.questions); if (data.exam) setExam(data.exam); announce(`已匯入 ${data.questions.length} 題。`);
+      setQuestions(data.questions); setActiveGenerationId(groupQuestionsByGeneration(data.questions).at(-1)?.id); if (data.exam) setExam(data.exam); announce(`已匯入 ${data.questions.length} 題。`);
     } catch (error) { announce(`匯入失敗：${(error as Error).message}`, 'error'); }
+  }
+  function clearReviewQuestions() {
+    if (!questions.length || !confirm(`確定清除審核頁面的全部 ${questions.length} 題？此動作無法復原。`)) return;
+    setQuestions([]); setActiveGenerationId(undefined); setReviewFocus(undefined); setReviewFilter('all'); announce('已清除審核頁面的全部題目。', 'info');
   }
   async function clearAll() { if (!confirm('確定清除這個瀏覽器保存的教材、題庫、試卷設定與所有 API Key？')) return; clearAllSessionKeys(); try { localStorage.removeItem(MODEL_CONFIG_STORAGE_KEY); } catch { /* Keep clearing other local data. */ } await clearSnapshot(); location.reload(); }
 
@@ -209,15 +237,16 @@ export function App() {
       </section>}
 
       {step === 3 && <section className="panel review-panel"><PageHeading eyebrow="STEP 04 · HUMAN REVIEW" title="審核候選題庫" description="接受、修改或退回每一題。來源引文可協助你回查教材，但仍請教師做最終判斷。" />
-        <div className="review-toolbar"><div>{(['all', 'candidate', 'accepted', 'rejected'] as const).map(status => <button key={status} className={reviewFilter === status ? 'active' : ''} onClick={() => setReviewFilter(status)}>{status === 'all' ? '全部' : status === 'candidate' ? '待審核' : status === 'accepted' ? '已接受' : '已退回'} <b>{status === 'all' ? questions.length : questions.filter(q => q.status === status).length}</b></button>)}</div><button className="text-button" onClick={() => setQuestions(state => state.map(q => q.status === 'candidate' ? { ...q, status: 'accepted' } : q))}><CheckCircle2 size={15} />接受所有待審題</button></div>
-        <div className="question-list">{visibleQuestions.map((question, visibleIndex) => { const index = questions.findIndex(q => q.id === question.id); const nextQuestionId = visibleQuestions[visibleIndex + 1]?.id; return <QuestionEditor key={question.id} question={question} index={index} total={questions.length} focusToken={reviewFocus?.id === question.id ? reviewFocus.token : undefined} update={patch => updateQuestion(question.id, patch)} accept={() => { updateQuestion(question.id, { status: 'accepted' }); if (nextQuestionId) setReviewFocus({ id: nextQuestionId, token: Date.now() }); }} move={direction => moveQuestion(index, direction)} duplicate={() => duplicateQuestion(question)} remove={() => setQuestions(state => state.filter(q => q.id !== question.id))} />; })}{!visibleQuestions.length && <Empty icon={<FileCheck2 />} title="此分類沒有題目" text="調整篩選條件，或回到上一步產生題目。" />}</div>
+        <div className="generation-tabs" role="tablist" aria-label="產題批次">{reviewGenerations.map(batch => <button key={batch.id} role="tab" aria-selected={batch.id === activeGeneration?.id} className={batch.id === activeGeneration?.id ? 'active' : ''} onClick={() => { setActiveGenerationId(batch.id); setReviewFilter('all'); setReviewFocus(undefined); }}><strong>{batch.id === LEGACY_GENERATION_ID ? '既有／匯入題目' : `第 ${batch.sequence} 次產出`}</strong><small>{formatGenerationTime(batch.createdAt)} · {batch.questions.length} 題 · {batch.modelId}</small></button>)}</div>
+        <div className="review-toolbar"><div>{(['all', 'candidate', 'accepted', 'rejected'] as const).map(status => <button key={status} className={reviewFilter === status ? 'active' : ''} onClick={() => setReviewFilter(status)}>{status === 'all' ? '全部' : status === 'candidate' ? '待審核' : status === 'accepted' ? '已接受' : '已退回'} <b>{status === 'all' ? activeQuestions.length : activeQuestions.filter(q => q.status === status).length}</b></button>)}</div><div className="review-toolbar-actions"><button className="text-button" onClick={() => { const ids = new Set(activeQuestions.map(q => q.id)); setQuestions(state => state.map(q => ids.has(q.id) && q.status === 'candidate' ? { ...q, status: 'accepted' } : q)); }}><CheckCircle2 size={15} />接受本頁待審題</button><button className="text-danger" onClick={clearReviewQuestions}><Trash2 size={15} />清除全部題目</button></div></div>
+        <div className="question-list">{visibleQuestions.map((question, visibleIndex) => { const index = activeQuestions.findIndex(q => q.id === question.id); const nextQuestionId = visibleQuestions[visibleIndex + 1]?.id; return <QuestionEditor key={question.id} question={question} index={index} total={activeQuestions.length} focusToken={reviewFocus?.id === question.id ? reviewFocus.token : undefined} update={patch => updateQuestion(question.id, patch)} accept={() => { updateQuestion(question.id, { status: 'accepted' }); if (nextQuestionId) setReviewFocus({ id: nextQuestionId, token: Date.now() }); }} move={direction => moveQuestion(question.id, direction, activeQuestions)} duplicate={() => duplicateQuestion(question)} remove={() => setQuestions(state => state.filter(q => q.id !== question.id))} />; })}{!visibleQuestions.length && <Empty icon={<FileCheck2 />} title="此分類沒有題目" text="調整篩選條件，或回到上一步產生題目。" />}</div>
         <footer className="panel-actions sticky-actions"><button className="secondary" onClick={() => setStep(2)}><ArrowLeft size={16} />回出題設定</button><span>{accepted.length} 題已接受 · 共 {accepted.reduce((sum, q) => sum + q.points, 0)} 分</span><span className="spacer" /><button className="primary" disabled={!accepted.length} onClick={() => setStep(4)}>下一步：匯出試卷<ArrowRight size={16} /></button></footer>
       </section>}
 
-      {step === 4 && <section className="panel"><PageHeading eyebrow="STEP 05 · EXPORT" title="匯出與列印" description="可下載單一版本的一般考卷，或題目相同但題序與題號不同的 A／B 卷；兩種都提供 DOCX 與離線 HTML。" />
+      {step === 4 && <section className="panel"><PageHeading eyebrow="STEP 05 · EXPORT" title="匯出與列印" description="可下載單一版本的一般考卷，或題目相同但題序與題號不同的 A／B 卷；兩種皆為可編輯 DOCX。" />
         <div className="export-layout"><div className="settings-card exam-meta"><h3>試卷資訊</h3><label className="stack-field"><span>試卷標題</span><input value={exam.title} onChange={e => setExam(s => ({ ...s, title: e.target.value }))} /></label><label className="stack-field"><span>副標題／科目</span><input value={exam.subtitle} onChange={e => setExam(s => ({ ...s, subtitle: e.target.value }))} placeholder="例如：自然科第三單元" /></label><div className="two-fields"><label className="stack-field"><span>作答時間（分鐘）</span><input type="number" min="1" value={exam.duration} onChange={e => setExam(s => ({ ...s, duration: Number(e.target.value) }))} /></label><label className="stack-field"><span>固定亂數種子</span><input type="number" value={exam.seed} onChange={e => setExam(s => ({ ...s, seed: Number(e.target.value) }))} /></label></div><p className="field-help">相同亂數種子會維持相同的 A／B 題序，方便重製試卷。</p></div>
-          <div className="export-preview"><div className="paper-preview"><span>A4 · DOCX／HTML</span><h3>{exam.title || '未命名試卷'}</h3><p>{exam.subtitle}</p><div>班級 ______　姓名 ______</div>{accepted.slice(0, 4).map((q, i) => <p key={q.id}><b>{i + 1}.</b> {q.stem}</p>)}</div><dl><div><dt>每卷題數</dt><dd>{accepted.length}</dd></div><div><dt>每卷總分</dt><dd>{accepted.reduce((sum, q) => sum + q.points, 0)}</dd></div><div><dt>格式</dt><dd>2</dd></div></dl></div>
-          <div className="export-cards"><button disabled={busy === 'export-docx-standard'} onClick={() => void exportDocx('standard')}>{busy === 'export-docx-standard' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>一般考卷 DOCX</strong><small>單一題本與解答，可在 Word 編輯</small></span><Download /></button><button disabled={busy === 'export-docx-ab'} onClick={() => void exportDocx('ab')}>{busy === 'export-docx-ab' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>A／B 卷 DOCX</strong><small>兩份異序題本與分卷解答，可在 Word 編輯</small></span><Download /></button><button onClick={() => downloadText('exam-studio-standard.html', createPrintHtml(exam, accepted))}><Printer /><span><strong>一般考卷 HTML</strong><small>單一題本與解答，可直接離線列印</small></span><Download /></button><button onClick={() => downloadText('exam-studio-ab.html', createAbPrintHtml(exam, accepted))}><Printer /><span><strong>A／B 卷 HTML</strong><small>兩份異序題本與分卷解答，可離線列印</small></span><Download /></button><button onClick={exportJson}><FileText /><span><strong>題庫 JSON</strong><small>可備份完整題庫與修訂資訊；不含 API Key</small></span><Download /></button><label className="import-json"><Upload /><span><strong>匯入題庫 JSON</strong><small>載入先前匯出的題庫</small></span><input type="file" accept="application/json,.json" onChange={e => e.target.files?.[0] && void importJson(e.target.files[0])} /></label></div></div>
+          <div className="export-preview"><div className="paper-preview"><span>A4 · DOCX</span><h3>{exam.title || '未命名試卷'}</h3><p>{exam.subtitle}</p><div>班級 ______　姓名 ______</div>{accepted.slice(0, 4).map((q, i) => <p key={q.id}><b>{i + 1}.</b> {q.stem}</p>)}</div><dl><div><dt>每卷題數</dt><dd>{accepted.length}</dd></div><div><dt>每卷總分</dt><dd>{accepted.reduce((sum, q) => sum + q.points, 0)}</dd></div><div><dt>DOCX 版本</dt><dd>2</dd></div></dl></div>
+          <div className="export-cards"><button disabled={busy === 'export-docx-standard'} onClick={() => void exportDocx('standard')}>{busy === 'export-docx-standard' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>一般考卷 DOCX</strong><small>單一題本與解答，可在 Word 編輯</small></span><Download /></button><button disabled={busy === 'export-docx-ab'} onClick={() => void exportDocx('ab')}>{busy === 'export-docx-ab' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>A／B 卷 DOCX</strong><small>兩份異序題本與分卷解答，可在 Word 編輯</small></span><Download /></button><button onClick={exportJson}><FileText /><span><strong>題庫 JSON</strong><small>可備份完整題庫、產題批次與修訂資訊；不含 API Key</small></span><Download /></button><label className="import-json"><Upload /><span><strong>匯入題庫 JSON</strong><small>載入先前匯出的題庫</small></span><input type="file" accept="application/json,.json" onChange={e => e.target.files?.[0] && void importJson(e.target.files[0])} /></label></div></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(3)}><ArrowLeft size={16} />回審核題庫</button><span className="spacer" /><span><ShieldCheck size={14} />已檢查：匯出檔不包含金鑰與教材全文</span></footer>
       </section>}
     </main>
