@@ -4,7 +4,7 @@ Teacher Exam Studio 是純前端 BYOK 應用程式。瀏覽器直接以 HTTPS �
 
 | Provider | Models | Generate | Key policy | Notes |
 | --- | --- | --- | --- | --- |
-| CGU LLM Gateway | `GET /models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 模型以下拉選單呈現；首次偵測預設最新 Luna；需允許 GitHub Pages 來源的 CORS |
+| CGU LLM Gateway | `GET /models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 模型以下拉選單呈現；首次偵測預設最新 Luna；連線測試使用 `max_completion_tokens`；需允許 GitHub Pages 來源的 CORS |
 | OpenAI | `GET /models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 瀏覽器直連政策可能依帳戶／端點而異 |
 | xAI / Grok | `GET /language-models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 模型清單可見不等於具有生成權限 |
 | Google Gemini | `GET /models` | `models/{id}:generateContent` | Query key；依 Provider 保存於瀏覽器 | 使用 JSON response MIME type |

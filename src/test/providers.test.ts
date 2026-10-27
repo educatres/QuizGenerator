@@ -28,4 +28,16 @@ describe('provider preferences', () => {
     const { sortCguModels } = await import('../providers');
     expect(sortCguModels([{ id: 'luna-2.10', label: 'Luna 2.10' }, { id: 'luna-2.9', label: 'Luna 2.9' }])[0].id).toBe('luna-2.10');
   });
+
+  it('uses max_completion_tokens for the CGU connection test', async () => {
+    const providers = await import('../providers');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    providers.setSessionKey('cgu', 'test-key-123');
+    await providers.adapters.cgu.testGeneration('luna-latest');
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(request.max_completion_tokens).toBe(8);
+    expect(request).not.toHaveProperty('max_tokens');
+    vi.unstubAllGlobals();
+  });
 });

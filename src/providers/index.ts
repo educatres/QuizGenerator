@@ -128,7 +128,11 @@ function createAdapter(id: ProviderId): ProviderAdapter {
       if (id === 'gemini') {
         await fetchJson(id, `/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', body: JSON.stringify({ contents: [{ parts: [{ text: '只回覆 OK' }] }] }) });
       } else {
-        await fetchJson(id, '/chat/completions', { method: 'POST', body: JSON.stringify({ model, messages: [{ role: 'user', content: '只回覆 OK' }], max_tokens: 8 }) });
+        await fetchJson(id, '/chat/completions', { method: 'POST', body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: '只回覆 OK' }],
+          ...(id === 'cgu' ? { max_completion_tokens: 8 } : { max_tokens: 8 }),
+        }) });
       }
     },
     async generateQuestions(request: GenerateRequest) {
