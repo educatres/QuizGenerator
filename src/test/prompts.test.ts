@@ -4,6 +4,19 @@ import { buildQuestionPrompt } from '../services/prompts';
 const settings = { counts: { single: 1, multiple: 0, true_false: 0, short_answer: 0 }, difficulty: 'medium' as const, points: 10, language: 'zh-TW' as const, instructions: '' };
 
 describe('question prompt past-exam guidance', () => {
+  it.each([
+    ['zh-TW', '繁體中文（台灣）'],
+    ['en', '英文（English）'],
+    ['ja', '日文（日本語）'],
+    ['ko', '韓文（한국어）'],
+    ['fr', '法文（français）'],
+  ] as const)('requests all question content in %s', (language, label) => {
+    const prompt = buildQuestionPrompt({ ...settings, language }, '[教材片段]');
+    expect(prompt).toContain(`出題語言：${label}`);
+    expect(prompt).toContain(`題幹、選項、答案、解析與評分準則全部使用${label}`);
+    expect(prompt).toContain('sources.quote 必須保留教材原文');
+  });
+
   it('keeps past exams separate from source material when transforming question types', () => {
     const prompt = buildQuestionPrompt(settings, '[教材片段]', { context: '[考古題片段]', strategy: 'transform' });
     expect(prompt).toContain('<source_material>\n[教材片段]\n</source_material>');
