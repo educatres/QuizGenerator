@@ -33,7 +33,7 @@ export function clearAllSessionKeys() {
 }
 
 const config = {
-  cgu: { name: 'CGU LLM Gateway', baseUrl: 'https://air.cgu.edu.tw/cgullmapi/v1', keyUrl: 'https://air.cgu.edu.tw/workspace4/LLMAPI/index.php' },
+  cgu: { name: 'CGU LLM Gateway', baseUrl: 'https://air.cgu.edu.tw/cgullmapi/v1', keyUrl: 'https://air.cgu.edu.tw/' },
   openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys' },
   xai: { name: 'xAI / Grok', baseUrl: 'https://api.x.ai/v1', keyUrl: 'https://console.x.ai/' },
   gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', keyUrl: 'https://aistudio.google.com/api-keys' },
@@ -136,7 +136,10 @@ function createAdapter(id: ProviderId): ProviderAdapter {
       }
     },
     async generateQuestions(request: GenerateRequest) {
-      const prompt = buildQuestionPrompt(request.settings, selectGenerationContext(request.chunks));
+      const prompt = buildQuestionPrompt(request.settings, selectGenerationContext(request.chunks), request.pastExamChunks?.length ? {
+        context: selectGenerationContext(request.pastExamChunks),
+        strategy: request.pastExamStrategy ?? 'transform',
+      } : undefined);
       let text = '';
       try {
         if (id === 'gemini') {

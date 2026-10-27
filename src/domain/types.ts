@@ -2,6 +2,7 @@ export type ProviderId = 'cgu' | 'openai' | 'xai' | 'gemini';
 export type QuestionType = 'single' | 'multiple' | 'true_false' | 'short_answer';
 export type QuestionStatus = 'candidate' | 'accepted' | 'rejected';
 export type Difficulty = 'easy' | 'medium' | 'hard';
+export type PastExamStrategy = 'transform' | 'avoid';
 
 export interface SourceRef {
   documentId: string;

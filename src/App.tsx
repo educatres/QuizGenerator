@@ -4,7 +4,7 @@ import {
   CircleAlert, Copy, Download, Eye, EyeOff, FileCheck2, FilePlus2, FileText, KeyRound, LoaderCircle,
   Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
 } from 'lucide-react';
-import type { Difficulty, ExamMeta, GenerationSettings, MaterialDocument, ProviderId, Question, QuestionStatus, QuestionType } from './domain/types';
+import type { Difficulty, ExamMeta, GenerationSettings, MaterialDocument, PastExamStrategy, ProviderId, Question, QuestionStatus, QuestionType } from './domain/types';
 import { difficultyLabels, now, questionTypeLabels, uid } from './domain/types';
 import { groupQuestionsByGeneration, LEGACY_GENERATION_ID } from './domain/generationBatches';
 import { adapters, clearAllSessionKeys, clearSessionKey, hasSessionKey, setSessionKey } from './providers';
@@ -23,6 +23,13 @@ const defaultModels: Record<ProviderId, string> = { cgu: '', openai: 'gpt-4.1-mi
 const MODEL_CONFIG_STORAGE_KEY = 'teacher-exam-studio.model-config.v1';
 const defaultSettings: GenerationSettings = { counts: { single: 5, multiple: 2, true_false: 2, short_answer: 1 }, difficulty: 'medium', points: 10, language: 'zh-TW', instructions: '' };
 const defaultExam: ExamMeta = { title: '課堂學習評量', subtitle: '', duration: 50, seed: 2026 };
+const instructionExamples = [
+  '避免只考專有名詞的字面記憶。',
+  '提高題目情境變化，評量靈活應用能力。',
+  '聚焦核心概念與推理，避免死記硬背。',
+  '略過瑣碎的背誦細節，不以冷僻資訊命題。',
+  '依教材各主題均衡命題，避免集中於單一段落。',
+] as const;
 
 function totalRequested(settings: GenerationSettings) { return Object.values(settings.counts).reduce((a, b) => a + b, 0); }
 function formatBytes(bytes: number) { return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
@@ -49,6 +56,8 @@ export function App() {
   const [connectionMessage, setConnectionMessage] = useState('');
   const [connected, setConnected] = useState<Partial<Record<ProviderId, boolean>>>({});
   const [materials, setMaterials] = useState<MaterialDocument[]>([]);
+  const [pastExams, setPastExams] = useState<MaterialDocument[]>([]);
+  const [pastExamStrategy, setPastExamStrategy] = useState<PastExamStrategy>('transform');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState(defaultSettings);
   const [exam, setExam] = useState(defaultExam);
@@ -63,13 +72,14 @@ export function App() {
   const generationController = useRef<AbortController | undefined>(undefined);
   const noticeTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
+  const pastExamInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { void loadSnapshot().then(snapshot => { if (snapshot) { setMaterials(snapshot.materials); setQuestions(snapshot.questions); setExam(snapshot.exam); } setHydrated(true); }); }, []);
+  useEffect(() => { void loadSnapshot().then(snapshot => { if (snapshot) { setMaterials(snapshot.materials); setPastExams(snapshot.pastExams ?? []); setPastExamStrategy(snapshot.pastExamStrategy ?? 'transform'); setQuestions(snapshot.questions); setExam(snapshot.exam); } setHydrated(true); }); }, []);
   useEffect(() => {
     if (!hydrated) return;
-    const timer = window.setTimeout(() => void saveSnapshot({ materials, questions, exam }), 450);
+    const timer = window.setTimeout(() => void saveSnapshot({ materials, pastExams, pastExamStrategy, questions, exam }), 450);
     return () => clearTimeout(timer);
-  }, [materials, questions, exam, hydrated]);
+  }, [materials, pastExams, pastExamStrategy, questions, exam, hydrated]);
   useEffect(() => { setKeyDraft(''); setShowKey(false); setConnectionMessage(''); }, [provider]);
   useEffect(() => {
     try { localStorage.setItem(MODEL_CONFIG_STORAGE_KEY, JSON.stringify({ provider, models: selectedModels })); }
@@ -78,6 +88,7 @@ export function App() {
 
   const adapter = adapters[provider];
   const allChunks = useMemo(() => materials.flatMap(material => material.chunks), [materials]);
+  const pastExamChunks = useMemo(() => pastExams.flatMap(material => material.chunks), [pastExams]);
   const reviewGenerations = useMemo(() => groupQuestionsByGeneration(questions), [questions]);
   const activeGeneration = reviewGenerations.find(batch => batch.id === activeGenerationId) ?? reviewGenerations.at(-1);
   const activeQuestions = activeGeneration?.questions ?? [];
@@ -135,6 +146,21 @@ export function App() {
     } catch (error) { announce((error as Error).message, 'error'); }
     finally { setBusy(''); if (fileInput.current) fileInput.current.value = ''; }
   }
+  async function importPastExamFiles(files: FileList | File[]) {
+    const list = [...files]; if (!list.length) return;
+    setBusy('past-exam');
+    try {
+      const imported: MaterialDocument[] = [];
+      for (const file of list) {
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        if (extension === 'pdf') imported.push(await extractPdf(file, (current, total) => setNotice({ kind: 'info', text: `正在解析考古題 ${file.name}：${current} / ${total} 頁` })));
+        else if (extension === 'txt' || extension === 'md' || extension === 'markdown') imported.push(await extractTextFile(file));
+        else throw new Error(`${file.name} 的格式不受支援。考古題請使用 PDF、TXT 或 Markdown。`);
+      }
+      setPastExams(state => [...state, ...imported]); announce(`已在本機解析 ${imported.length} 份考古題。`);
+    } catch (error) { announce((error as Error).message, 'error'); }
+    finally { setBusy(''); if (pastExamInput.current) pastExamInput.current.value = ''; }
+  }
   function addPasted() {
     if (pasteText.trim().length < 20) return announce('請貼上至少 20 個字的教材內容。', 'error');
     const material = fromPastedText(pasteText); setMaterials(state => [...state, material]); setPasteText(''); setExpandedMaterial(material.id); announce('已加入貼上文字。');
@@ -161,7 +187,7 @@ export function App() {
     if (totalRequested(settings) < 1 || totalRequested(settings) > 50) return announce('一次請產生 1–50 題。', 'error');
     const controller = new AbortController(); generationController.current = controller; setBusy('generate');
     try {
-      const generated = await adapter.generateQuestions({ model: selectedModels[provider], chunks: allChunks, settings, signal: controller.signal });
+      const generated = await adapter.generateQuestions({ model: selectedModels[provider], chunks: allChunks, settings, pastExamChunks, pastExamStrategy, signal: controller.signal });
       const verified = reconcileQuestionSources(generated, allChunks);
       const generationId = uid();
       const generatedAt = now();
@@ -185,7 +211,20 @@ export function App() {
     });
   }
   function duplicateQuestion(question: Question) { setQuestions(state => [...state, { ...structuredClone(question), id: uid(), stem: `${question.stem}（副本）`, status: 'candidate', revision: 1, createdAt: now() }]); }
+  function toggleInstructionExample(example: string) {
+    setSettings(state => {
+      const lines = state.instructions.split('\n').map(line => line.trim()).filter(Boolean);
+      const next = lines.includes(example) ? lines.filter(line => line !== example) : [...lines, example];
+      return { ...state, instructions: next.join('\n') };
+    });
+  }
   function exportJson() { downloadText('quiz-generator.json', JSON.stringify({ version: 1, exportedAt: now(), exam, questions }, null, 2), 'application/json'); }
+  async function exportTxt() {
+    try {
+      const { createExamText } = await import('./services/exportText');
+      downloadText('quiz-generator.txt', createExamText(exam, accepted), 'text/plain'); announce('純文字試題 TXT 已建立。');
+    } catch (error) { announce(`無法建立 TXT：${(error as Error).message}`, 'error'); }
+  }
   async function exportDocx(mode: ExamDocumentMode) {
     setBusy(`export-docx-${mode}`);
     try {
@@ -210,7 +249,7 @@ export function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><div className="brand-symbol"><BookOpen size={24} /></div><div><h1>QuizGenerator <span>1.0</span></h1><p>從教材到試卷，你的本機命題工作台</p></div></div>
+      <div className="brand"><div className="brand-symbol"><BookOpen size={24} /></div><div><h1>QuizGenerator <span>1.0</span></h1><p>從教材到試卷，你的命題工作台</p></div></div>
       <div className="header-status"><button className={`ai-settings-toggle ${hasSessionKey(provider) && selectedModels[provider] ? 'ready' : ''}`} onClick={() => setApiSettingsOpen(true)}><KeyRound size={15} /><span><strong>AI 設定</strong><small>{hasSessionKey(provider) && selectedModels[provider] ? `${adapter.name} · ${selectedModels[provider]}` : '設定 API Key 與模型'}</small></span></button><span><ShieldCheck size={13} />教材直接傳至所選 AI</span><button onClick={() => void clearAll()} title="清除本機資料"><Trash2 size={15} /></button></div>
     </header>
     <nav className="stepper" aria-label="製作流程">{steps.map(([title, caption], index) => <button key={title} className={`${index === step ? 'active' : ''} ${canGo[index] ? 'available' : ''}`} onClick={() => canGo[index] && setStep(index)} disabled={!canGo[index]}><i>{index < step || (index === 0 && connected[provider]) ? <Check size={14} /> : index + 1}</i><span><strong>{title}</strong><small>{caption}</small></span></button>)}</nav>
@@ -226,13 +265,17 @@ export function App() {
           <button className="example-material-button" disabled={!!busy} onClick={() => void addExampleMaterial()}>{busy === 'example' ? <LoaderCircle className="spin" size={17} /> : <BookOpen size={17} />}<span><strong>載入 AI 概念入門範例</strong><small>純文字教材，可直接用來測試產題流程</small></span><ArrowRight size={15} /></button>
           <div className="or"><span>或貼上文字</span></div><textarea className="paste-area" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="貼上講義、文章或課程內容…" rows={7} /><button className="secondary add-paste" onClick={addPasted}><Plus size={15} />加入文字教材</button>
         </div><div className="material-list"><div className="list-heading"><span>教材清單</span><b>{materials.length} 份 · {allChunks.length} 個片段</b></div>{!materials.length ? <Empty icon={<FilePlus2 />} title="尚未加入教材" text="解析後可檢查擷取文字與頁碼，再交給 AI 出題。" /> : materials.map(material => <article key={material.id} className="material-card"><button className="material-summary" onClick={() => setExpandedMaterial(expandedMaterial === material.id ? undefined : material.id)}><FileText size={20} /><span><strong>{material.name}</strong><small>{material.kind.toUpperCase()} · {material.pageCount ? `${material.pageCount} 頁 · ` : ''}{material.characterCount.toLocaleString()} 字 · {formatBytes(material.size)}</small></span>{expandedMaterial === material.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>{material.warning && <p className="warning"><CircleAlert size={14} />{material.warning}</p>}{expandedMaterial === material.id && <div className="material-preview">{material.chunks.slice(0, 3).map(chunk => <div key={chunk.id}><b>{chunk.pageNumber ? `第 ${chunk.pageNumber} 頁` : chunk.id}</b><p>{chunk.text.slice(0, 550)}{chunk.text.length > 550 ? '…' : ''}</p></div>)}{material.chunks.length > 3 && <small>另有 {material.chunks.length - 3} 個片段</small>}</div>}<button className="remove" onClick={() => setMaterials(state => state.filter(d => d.id !== material.id))} aria-label={`移除 ${material.name}`}><X size={15} /></button></article>)}</div></div>
+        <section className="past-exam-panel" aria-labelledby="past-exam-title"><div className="past-exam-heading"><div><p>PAST EXAM GUIDANCE · 選填</p><h3 id="past-exam-title">匯入考古題</h3><span>考古題只用來引導題型或避開重複，不會作為答案與引文來源。</span></div><label className="secondary past-exam-upload"><Upload size={16} />{busy === 'past-exam' ? '正在解析考古題…' : '選擇考古題'}<input ref={pastExamInput} aria-label="匯入考古題檔案" type="file" accept=".pdf,.txt,.md,.markdown" multiple disabled={!!busy} onChange={e => e.target.files && void importPastExamFiles(e.target.files)} /></label></div>
+          <div className="past-exam-strategy" role="radiogroup" aria-label="考古題使用方式"><button role="radio" aria-checked={pastExamStrategy === 'transform'} className={pastExamStrategy === 'transform' ? 'active' : ''} onClick={() => setPastExamStrategy('transform')}><strong>根據考古題變換題型</strong><small>保留評量概念，改寫題型、情境與問法</small></button><button role="radio" aria-checked={pastExamStrategy === 'avoid'} className={pastExamStrategy === 'avoid' ? 'active' : ''} onClick={() => setPastExamStrategy('avoid')}><strong>避開考古題</strong><small>避開既有考點與相似問法，優先命題未考內容</small></button></div>
+          {pastExams.length > 0 && <div className="past-exam-files">{pastExams.map(document => <span key={document.id}><FileText size={15} /><b>{document.name}</b><small>{document.characterCount.toLocaleString()} 字</small><button onClick={() => setPastExams(state => state.filter(item => item.id !== document.id))} aria-label={`移除考古題 ${document.name}`}><X size={14} /></button></span>)}</div>}
+        </section>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(0)}><ArrowLeft size={16} />上一步</button><span className="spacer" /><button className="primary" disabled={!materials.length} onClick={() => setStep(2)}>下一步：設定題型<ArrowRight size={16} /></button></footer>
       </section>}
 
       {step === 2 && <section className="panel"><PageHeading eyebrow="STEP 03 · QUESTION BLUEPRINT" title="設定題型與難度" description="AI 產生的都是候選題；答案、引文與評分準則需由教師在下一步確認。" />
         <div className="generation-grid"><div className="settings-card"><h3>題型與題數</h3>{(Object.keys(settings.counts) as QuestionType[]).map(type => <label className="count-row" key={type}><span>{questionTypeLabels[type]}<small>{type === 'single' ? '恰有一個正解' : type === 'multiple' ? '可有多個正解' : type === 'true_false' ? '正確或錯誤' : '參考答案與評分準則'}</small></span><input type="number" min="0" max="25" value={settings.counts[type]} onChange={e => setSettings(s => ({ ...s, counts: { ...s.counts, [type]: Math.max(0, Number(e.target.value)) } }))} /></label>)}</div>
-          <div className="settings-card"><h3>命題條件</h3><label className="stack-field"><span>整體難度</span><select value={settings.difficulty} onChange={e => setSettings(s => ({ ...s, difficulty: e.target.value as Difficulty }))}>{(Object.keys(difficultyLabels) as Difficulty[]).map(d => <option value={d} key={d}>{difficultyLabels[d]}</option>)}</select></label><label className="stack-field"><span>每題預設配分</span><input type="number" min="1" max="100" value={settings.points} onChange={e => setSettings(s => ({ ...s, points: Number(e.target.value) }))} /></label><label className="stack-field"><span>額外命題要求</span><textarea rows={5} value={settings.instructions} onChange={e => setSettings(s => ({ ...s, instructions: e.target.value }))} placeholder="例如：著重概念應用，避免純記憶題…" /></label></div>
-          <aside className="generation-summary"><Sparkles size={26} /><span>這次將產生</span><strong>{totalRequested(settings)}</strong><b>題候選題</b><dl><div><dt>教材</dt><dd>{materials.length} 份</dd></div><div><dt>文字片段</dt><dd>{allChunks.length} 個</dd></div><div><dt>AI</dt><dd>{adapter.name}</dd></div><div><dt>模型</dt><dd>{selectedModels[provider] || '未選擇'}</dd></div></dl>{!hasSessionKey(provider) && <p className="warning"><CircleAlert size={14} />尚未設定 API Key；按下產生題目時會自動開啟設定面板。</p>}<button className="generate-button" disabled={busy === 'generate' || !allChunks.length} onClick={() => void generate()}>{busy === 'generate' ? <><LoaderCircle className="spin" />正在閱讀教材與命題…</> : <><Sparkles />產生候選題</>}</button>{busy === 'generate' && <button className="cancel" onClick={() => generationController.current?.abort()}>取消請求</button>}</aside></div>
+          <div className="settings-card"><h3>命題條件</h3><label className="stack-field"><span>整體難度</span><select value={settings.difficulty} onChange={e => setSettings(s => ({ ...s, difficulty: e.target.value as Difficulty }))}>{(Object.keys(difficultyLabels) as Difficulty[]).map(d => <option value={d} key={d}>{difficultyLabels[d]}</option>)}</select></label><label className="stack-field"><span>每題預設配分</span><input type="number" min="1" max="100" value={settings.points} onChange={e => setSettings(s => ({ ...s, points: Number(e.target.value) }))} /></label><label className="stack-field"><span>額外命題要求</span><textarea rows={6} value={settings.instructions} onChange={e => setSettings(s => ({ ...s, instructions: e.target.value }))} placeholder="可自行輸入，或點選下方快速範例…" /></label><div className="instruction-examples"><span>快速範例（可複選）</span>{instructionExamples.map(example => { const selected = settings.instructions.split('\n').map(line => line.trim()).includes(example); return <button key={example} type="button" aria-pressed={selected} className={selected ? 'active' : ''} onClick={() => toggleInstructionExample(example)}>{selected && <Check size={13} />}{example}</button>; })}</div></div>
+          <aside className="generation-summary"><Sparkles size={26} /><span>這次將產生</span><strong>{totalRequested(settings)}</strong><b>題候選題</b><dl><div><dt>教材</dt><dd>{materials.length} 份</dd></div><div><dt>文字片段</dt><dd>{allChunks.length} 個</dd></div>{pastExams.length > 0 && <div><dt>考古題策略</dt><dd>{pastExamStrategy === 'transform' ? '變換題型' : '避開考古題'}</dd></div>}<div><dt>AI</dt><dd>{adapter.name}</dd></div><div><dt>模型</dt><dd>{selectedModels[provider] || '未選擇'}</dd></div></dl>{!hasSessionKey(provider) && <p className="warning"><CircleAlert size={14} />尚未設定 API Key；按下產生題目時會自動開啟設定面板。</p>}<button className="generate-button" disabled={busy === 'generate' || !allChunks.length} onClick={() => void generate()}>{busy === 'generate' ? <><LoaderCircle className="spin" />正在閱讀教材與命題…</> : <><Sparkles />產生候選題</>}</button>{busy === 'generate' && <button className="cancel" onClick={() => generationController.current?.abort()}>取消請求</button>}</aside></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(1)}><ArrowLeft size={16} />上一步</button><span className="spacer" />{questions.length > 0 && <button className="secondary" onClick={() => setStep(3)}>查看已有 {questions.length} 題<ArrowRight size={16} /></button>}</footer>
       </section>}
 
@@ -243,10 +286,10 @@ export function App() {
         <footer className="panel-actions sticky-actions"><button className="secondary" onClick={() => setStep(2)}><ArrowLeft size={16} />回出題設定</button><span>{accepted.length} 題已接受 · 共 {accepted.reduce((sum, q) => sum + q.points, 0)} 分</span><span className="spacer" /><button className="primary" disabled={!accepted.length} onClick={() => setStep(4)}>下一步：匯出試卷<ArrowRight size={16} /></button></footer>
       </section>}
 
-      {step === 4 && <section className="panel"><PageHeading eyebrow="STEP 05 · EXPORT" title="匯出與列印" description="可下載單一版本的一般考卷，或題目相同但題序與題號不同的 A／B 卷；兩種皆為可編輯 DOCX。" />
+      {step === 4 && <section className="panel"><PageHeading eyebrow="STEP 05 · EXPORT" title="匯出與列印" description="可下載可編輯 DOCX 的一般考卷與 A／B 卷，也可匯出方便複製與交換的純文字 TXT 試題。" />
         <div className="export-layout"><div className="settings-card exam-meta"><h3>試卷資訊</h3><label className="stack-field"><span>試卷標題</span><input value={exam.title} onChange={e => setExam(s => ({ ...s, title: e.target.value }))} /></label><label className="stack-field"><span>副標題／科目</span><input value={exam.subtitle} onChange={e => setExam(s => ({ ...s, subtitle: e.target.value }))} placeholder="例如：自然科第三單元" /></label><div className="two-fields"><label className="stack-field"><span>作答時間（分鐘）</span><input type="number" min="1" value={exam.duration} onChange={e => setExam(s => ({ ...s, duration: Number(e.target.value) }))} /></label><label className="stack-field"><span>固定亂數種子</span><input type="number" value={exam.seed} onChange={e => setExam(s => ({ ...s, seed: Number(e.target.value) }))} /></label></div><p className="field-help">相同亂數種子會維持相同的 A／B 題序，方便重製試卷。</p></div>
-          <div className="export-preview"><div className="paper-preview"><span>A4 · DOCX</span><h3>{exam.title || '未命名試卷'}</h3><p>{exam.subtitle}</p><div>班級 ______　姓名 ______</div>{accepted.slice(0, 4).map((q, i) => <p key={q.id}><b>{i + 1}.</b> {q.stem}</p>)}</div><dl><div><dt>每卷題數</dt><dd>{accepted.length}</dd></div><div><dt>每卷總分</dt><dd>{accepted.reduce((sum, q) => sum + q.points, 0)}</dd></div><div><dt>DOCX 版本</dt><dd>2</dd></div></dl></div>
-          <div className="export-cards"><button disabled={busy === 'export-docx-standard'} onClick={() => void exportDocx('standard')}>{busy === 'export-docx-standard' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>一般考卷 DOCX</strong><small>單一題本與解答，可在 Word 編輯</small></span><Download /></button><button disabled={busy === 'export-docx-ab'} onClick={() => void exportDocx('ab')}>{busy === 'export-docx-ab' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>A／B 卷 DOCX</strong><small>兩份異序題本與分卷解答，可在 Word 編輯</small></span><Download /></button><button onClick={exportJson}><FileText /><span><strong>題庫 JSON</strong><small>可備份完整題庫、產題批次與修訂資訊；不含 API Key</small></span><Download /></button><label className="import-json"><Upload /><span><strong>匯入題庫 JSON</strong><small>載入先前匯出的題庫</small></span><input type="file" accept="application/json,.json" onChange={e => e.target.files?.[0] && void importJson(e.target.files[0])} /></label></div></div>
+          <div className="export-preview"><div className="paper-preview"><span>DOCX · TXT</span><h3>{exam.title || '未命名試卷'}</h3><p>{exam.subtitle}</p><div>班級 ______　姓名 ______</div>{accepted.slice(0, 4).map((q, i) => <p key={q.id}><b>{i + 1}.</b> {q.stem}</p>)}</div><dl><div><dt>每卷題數</dt><dd>{accepted.length}</dd></div><div><dt>每卷總分</dt><dd>{accepted.reduce((sum, q) => sum + q.points, 0)}</dd></div><div><dt>可下載格式</dt><dd className="format-value">DOCX／TXT</dd></div></dl></div>
+          <div className="export-cards"><button disabled={busy === 'export-docx-standard'} onClick={() => void exportDocx('standard')}>{busy === 'export-docx-standard' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>一般考卷 DOCX</strong><small>單一題本與解答，可在 Word 編輯</small></span><Download /></button><button disabled={busy === 'export-docx-ab'} onClick={() => void exportDocx('ab')}>{busy === 'export-docx-ab' ? <LoaderCircle className="spin" /> : <FileText />}<span><strong>A／B 卷 DOCX</strong><small>兩份異序題本與分卷解答，可在 Word 編輯</small></span><Download /></button><button onClick={() => void exportTxt()}><FileText /><span><strong>純文字試題 TXT</strong><small>單一題本、選項、答案與解析，方便複製交換</small></span><Download /></button><button onClick={exportJson}><FileText /><span><strong>題庫 JSON</strong><small>可備份完整題庫、產題批次與修訂資訊；不含 API Key</small></span><Download /></button><label className="import-json"><Upload /><span><strong>匯入題庫 JSON</strong><small>載入先前匯出的題庫</small></span><input type="file" accept="application/json,.json" onChange={e => e.target.files?.[0] && void importJson(e.target.files[0])} /></label></div></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(3)}><ArrowLeft size={16} />回審核題庫</button><span className="spacer" /><span><ShieldCheck size={14} />已檢查：匯出檔不包含金鑰與教材全文</span></footer>
       </section>}
     </main>
@@ -254,7 +297,7 @@ export function App() {
       <header className="modal-heading"><div><p>LOCAL AI CONNECTION</p><h2 id="api-settings-title">連接你的 AI</h2><span>設定保存在這個瀏覽器；下次開啟可直接沿用。</span></div><button onClick={() => setApiSettingsOpen(false)} aria-label="關閉 AI 設定"><X size={19} /></button></header>
       <div className="modal-scroll">
         <div className="provider-tabs">{providerIds.map(id => <button key={id} className={provider === id ? 'active' : ''} onClick={() => !busy && setProvider(id)} disabled={!!busy}><span>{id === 'cgu' ? '◈' : id === 'openai' ? '✳' : id === 'xai' ? '𝕏' : '✦'}</span>{adapters[id].name}{hasSessionKey(id) && <i />}</button>)}</div>
-        <div className="endpoint"><span>BASE URL</span><code>{adapter.baseUrl}</code></div>
+        {provider === 'cgu' && <div className="cgu-key-notice"><KeyRound size={17} /><span>長庚大學師生，請到 <a href="https://air.cgu.edu.tw/" target="_blank" rel="noreferrer">air.cgu.edu.tw</a> 領取 CGU API Key。</span></div>}
         <div className="privacy-card"><ShieldCheck size={23} /><div><strong>API Key 儲存在你的瀏覽器</strong><p>請只在信任的個人裝置使用。金鑰不會進入教材、題庫、匯出檔或 GitHub，並可隨時清除。</p></div></div>
         <label className="field-label" htmlFor="api-key">API Key <span>{hasSessionKey(provider) ? '這個瀏覽器已保存' : '尚未設定'}</span></label>
         <div className="key-input"><KeyRound size={17} /><input id="api-key" type={showKey ? 'text' : 'password'} autoComplete="off" value={keyDraft} placeholder={hasSessionKey(provider) ? '••••••••（輸入新金鑰可取代）' : '貼上你的 API Key'} onChange={e => setKeyDraft(e.target.value)} /><button disabled={!keyDraft} onClick={() => setShowKey(!showKey)} aria-label={showKey ? '隱藏金鑰' : '顯示金鑰'}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>

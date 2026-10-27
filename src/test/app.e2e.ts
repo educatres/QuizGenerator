@@ -26,6 +26,8 @@ test('opens API settings on demand and persists a key in this browser', async ({
   await page.locator('.ai-settings-toggle').click();
   const dialog = page.getByRole('dialog', { name: '連接你的 AI' });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('BASE URL')).toHaveCount(0);
+  await expect(dialog.getByRole('link', { name: 'air.cgu.edu.tw' })).toHaveAttribute('href', 'https://air.cgu.edu.tw/');
   await dialog.getByLabel('API Key').fill('test-browser-key');
   await dialog.getByRole('button', { name: '儲存 API Key' }).click();
   await expect(dialog.getByText('這個瀏覽器已保存')).toBeVisible();
@@ -43,6 +45,8 @@ test('accepts pasted teaching material and opens the blueprint', async ({ page }
   await page.getByRole('button', { name: /下一步：設定題型/ }).click();
   await expect(page.getByRole('heading', { name: '設定題型與難度' })).toBeVisible();
   await expect(page.getByText('10', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '聚焦核心概念與推理，避免死記硬背。' }).click();
+  await expect(page.getByLabel('額外命題要求')).toHaveValue('聚焦核心概念與推理，避免死記硬背。');
   await page.getByRole('button', { name: '產生候選題' }).click();
   await expect(page.getByRole('dialog', { name: '連接你的 AI' })).toBeVisible();
   await expect(page.getByText('請先設定 API Key；設定面板已為你開啟。')).toBeVisible();
@@ -89,6 +93,9 @@ test('separates review batches and can clear every reviewed question at once', a
   await page.getByRole('navigation', { name: '製作流程' }).getByRole('button', { name: /匯出試卷/ }).click();
   await expect(page.getByRole('button', { name: /一般考卷 DOCX/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /A／B 卷 DOCX/ })).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: /純文字試題 TXT/ }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe('quiz-generator.txt');
   await expect(page.getByText(/考卷 HTML/)).toHaveCount(0);
   await page.getByRole('navigation', { name: '製作流程' }).getByRole('button', { name: /審核題庫/ }).click();
 
@@ -96,4 +103,17 @@ test('separates review batches and can clear every reviewed question at once', a
   await page.getByRole('button', { name: '清除全部題目' }).click();
   await expect(page.getByText('已清除審核頁面的全部題目。')).toBeVisible();
   await expect(batchTabs.getByRole('tab')).toHaveCount(0);
+});
+
+test('imports a past exam and lets the teacher choose how to use it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /下一步：加入教材/ }).click();
+  await page.getByLabel('匯入考古題檔案').setInputFiles({
+    name: '歷屆期中考.txt', mimeType: 'text/plain', buffer: Buffer.from('第一題：請說明人工智慧與機器學習的關係。'),
+  });
+  await expect(page.getByText('歷屆期中考.txt')).toBeVisible();
+  const strategies = page.getByRole('radiogroup', { name: '考古題使用方式' });
+  await expect(strategies.getByRole('radio', { name: /根據考古題變換題型/ })).toHaveAttribute('aria-checked', 'true');
+  await strategies.getByRole('radio', { name: /避開考古題/ }).click();
+  await expect(strategies.getByRole('radio', { name: /避開考古題/ })).toHaveAttribute('aria-checked', 'true');
 });

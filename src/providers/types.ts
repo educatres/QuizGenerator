@@ -1,8 +1,15 @@
 import type { GeneratedQuestion } from '../domain/questionSchema';
-import type { GenerationSettings, MaterialChunk, ProviderId } from '../domain/types';
+import type { GenerationSettings, MaterialChunk, PastExamStrategy, ProviderId } from '../domain/types';
 
 export interface ModelOption { id: string; label: string; created?: number }
-export interface GenerateRequest { model: string; chunks: MaterialChunk[]; settings: GenerationSettings; signal?: AbortSignal }
+export interface GenerateRequest {
+  model: string;
+  chunks: MaterialChunk[];
+  settings: GenerationSettings;
+  pastExamChunks?: MaterialChunk[];
+  pastExamStrategy?: PastExamStrategy;
+  signal?: AbortSignal;
+}
 export interface ProviderAdapter {
   id: ProviderId;
   name: string;

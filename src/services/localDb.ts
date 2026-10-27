@@ -1,7 +1,15 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { ExamMeta, MaterialDocument, Question } from '../domain/types';
+import type { ExamMeta, MaterialDocument, PastExamStrategy, Question } from '../domain/types';
 
-interface Snapshot { id: 'current'; materials: MaterialDocument[]; questions: Question[]; exam: ExamMeta; updatedAt: string }
+interface Snapshot {
+  id: 'current';
+  materials: MaterialDocument[];
+  pastExams?: MaterialDocument[];
+  pastExamStrategy?: PastExamStrategy;
+  questions: Question[];
+  exam: ExamMeta;
+  updatedAt: string;
+}
 
 class ExamDatabase extends Dexie {
   snapshots!: EntityTable<Snapshot, 'id'>;

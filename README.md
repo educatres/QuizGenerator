@@ -7,17 +7,17 @@ QuizGenerator 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md)
 - API Key 依 Provider 保存在使用者目前瀏覽器的 `localStorage`，不寫入 IndexedDB、匯出檔或 Git；請只在信任的個人裝置使用，並可從「AI 設定」一鍵清除。
 - 教材先在瀏覽器解析。只有按下「產生候選題」時，文字片段才直接送往選定的 AI Provider。
 - 匯出檔不包含 API Key、Provider metadata 或教材全文。
-- 題庫與教材擷取文字會保存在本機 IndexedDB，方便重新開啟後繼續審核。
+- 題庫、教材與考古題擷取文字會保存在本機 IndexedDB，方便重新開啟後繼續審核。
 
 ## 功能
 
 1. 收合式 AI 設定按鈕；CGU LLM Gateway、OpenAI、xAI / Grok、Google Gemini Provider Adapter
 2. CGU 模型自動偵測下拉選單，首次偵測預設選擇 API 回傳的最新 Luna
 3. PDF.js Web Worker、CMap 與 standard fonts；TXT / Markdown / 貼上文字
-4. 內建「AI 概念入門」純文字範例，可一鍵載入並直接測試產題
-5. 單選、複選、是非與簡答題；來源引文會正規化比對並自動校正至實際教材片段
+4. 內建「AI 概念入門」純文字範例，並可匯入考古題後選擇「變換題型」或「避開考古題」
+5. 單選、複選、是非與簡答題；提供額外命題要求快速範例，來源引文會正規化比對並自動校正至實際教材片段
 6. 每次產題結果以獨立審核分頁保存；支援題目編輯、接受／退回、複製、刪除、排序、版本紀錄與一鍵清空審核區
-7. 一般考卷與同題異序 A／B 卷，皆可匯出可編輯 DOCX
+7. 一般考卷與同題異序 A／B 卷可匯出可編輯 DOCX，另提供純文字 TXT 試題
 8. 分卷解答與 JSON 題庫備份
 9. IndexedDB 自動保存、GitHub Pages 自動部署
 
