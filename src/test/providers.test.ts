@@ -40,4 +40,25 @@ describe('provider preferences', () => {
     expect(request).not.toHaveProperty('max_tokens');
     vi.unstubAllGlobals();
   });
+
+  it('does not override the default temperature when generating with CGU', async () => {
+    const providers = await import('../providers');
+    const generated = { questions: [{
+      type: 'true_false', stem: '這是一個有效題目嗎？', correctBoolean: true,
+      explanation: '是。', sources: [{ documentId: 'doc', chunkId: 'doc-c1', quote: '教材' }],
+      difficulty: 'easy', points: 5,
+    }] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(generated) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    providers.setSessionKey('cgu', 'test-key-123');
+    await providers.adapters.cgu.generateQuestions({
+      model: 'luna-latest',
+      chunks: [{ id: 'doc-c1', documentId: 'doc', text: '教材' }],
+      settings: { counts: { single: 0, multiple: 0, true_false: 1, short_answer: 0 }, difficulty: 'easy', points: 5, language: 'zh-TW', instructions: '' },
+    });
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(request).not.toHaveProperty('temperature');
+    expect(request.response_format).toEqual({ type: 'json_object' });
+    vi.unstubAllGlobals();
+  });
 });

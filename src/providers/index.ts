@@ -143,7 +143,14 @@ function createAdapter(id: ProviderId): ProviderAdapter {
           const data = await fetchJson(id, `/models/${encodeURIComponent(request.model)}:generateContent`, { method: 'POST', signal: request.signal, body: JSON.stringify({ systemInstruction: { parts: [{ text: systemGuard }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.3 } }) });
           text = (data.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text || '').join('');
         } else {
-          const data = await fetchJson(id, '/chat/completions', { method: 'POST', signal: request.signal, body: JSON.stringify({ model: request.model, messages: [{ role: 'system', content: systemGuard }, { role: 'user', content: prompt }], temperature: 0.3, response_format: { type: 'json_object' } }) });
+          const data = await fetchJson(id, '/chat/completions', { method: 'POST', signal: request.signal, body: JSON.stringify({
+            model: request.model,
+            messages: [{ role: 'system', content: systemGuard }, { role: 'user', content: prompt }],
+            // Newer CGU Luna models only accept their default temperature (1).
+            // Omitting the field is more compatible than explicitly sending 1.
+            ...(id === 'cgu' ? {} : { temperature: 0.3 }),
+            response_format: { type: 'json_object' },
+          }) });
           text = data.choices?.[0]?.message?.content || '';
         }
       } catch (error) { throw normalizeError(error, id); }
