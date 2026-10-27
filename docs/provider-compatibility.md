@@ -1,6 +1,6 @@
 # Provider compatibility
 
-Exam Studio 是純前端 BYOK 應用程式。瀏覽器直接以 HTTPS 呼叫供應商；是否可用取決於 API 權限與供應商的 CORS 設定。
+QuizGenerator 是純前端 BYOK 應用程式。瀏覽器直接以 HTTPS 呼叫供應商；是否可用取決於 API 權限與供應商的 CORS 設定。
 
 | Provider | Models | Generate | Key policy | Notes |
 | --- | --- | --- | --- | --- |

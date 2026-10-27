@@ -1,6 +1,6 @@
-# Exam Studio
+# QuizGenerator
 
-Exam Studio 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md) 實作的 browser-first 智慧出題與試卷製作工具。它可在瀏覽器本機解析 PDF、TXT 與 Markdown，以使用者自己的 API Key 呼叫 AI，再由教師審核並匯出 A4 試卷或 JSON 題庫。
+QuizGenerator 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md) 實作的 browser-first 智慧出題與試卷製作工具。它可在瀏覽器本機解析 PDF、TXT 與 Markdown，以使用者自己的 API Key 呼叫 AI，再由教師審核並匯出 A4 試卷或 JSON 題庫。
 
 ## 隱私設計
 

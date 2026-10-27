@@ -126,10 +126,10 @@ export async function createExamDocx(meta: ExamMeta, questions: Question[], mode
   }
 
   const document = new Document({
-    creator: 'Exam Studio',
+    creator: 'QuizGenerator',
     title: `${meta.title} ${mode === 'ab' ? 'A B 卷' : '一般考卷'}`,
     subject: '試卷與參考答案',
-    description: '由 Exam Studio 在瀏覽器本機產生的可編輯 Word 試卷',
+    description: '由 QuizGenerator 在瀏覽器本機產生的可編輯 Word 試卷',
     styles: {
       default: {
         document: {

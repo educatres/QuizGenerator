@@ -1,6 +1,6 @@
 # AI 智慧出題與試卷製作系統 — Codex 開發規格（v1.0）
 
-> 產品代號：Teacher Exam Studio  
+> 產品名稱：QuizGenerator
 > 目標部署：GitHub Pages 靜態網站  
 > 主要語言：繁體中文（zh-TW）  
 > 核心原則：Browser-first、BYOK（Bring Your Own Key）、老師審核後才能定稿  

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('opens the five-step local-first workflow', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Exam Studio/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /QuizGenerator/ })).toBeVisible();
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).fontSize)).toBe('16px');
   await expect(page.getByRole('heading', { name: '連接你的 AI' })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '連接你的 AI' })).toHaveCount(0);

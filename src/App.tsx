@@ -185,12 +185,12 @@ export function App() {
     });
   }
   function duplicateQuestion(question: Question) { setQuestions(state => [...state, { ...structuredClone(question), id: uid(), stem: `${question.stem}（副本）`, status: 'candidate', revision: 1, createdAt: now() }]); }
-  function exportJson() { downloadText('exam-studio.json', JSON.stringify({ version: 1, exportedAt: now(), exam, questions }, null, 2), 'application/json'); }
+  function exportJson() { downloadText('quiz-generator.json', JSON.stringify({ version: 1, exportedAt: now(), exam, questions }, null, 2), 'application/json'); }
   async function exportDocx(mode: ExamDocumentMode) {
     setBusy(`export-docx-${mode}`);
     try {
       const { createExamDocx } = await import('./services/exportDocx');
-      downloadBlob(mode === 'ab' ? 'exam-studio-ab.docx' : 'exam-studio-standard.docx', await createExamDocx(exam, accepted, mode));
+      downloadBlob(mode === 'ab' ? 'quiz-generator-ab.docx' : 'quiz-generator-standard.docx', await createExamDocx(exam, accepted, mode));
       announce(`${mode === 'ab' ? 'A／B 卷' : '一般考卷'} DOCX 已建立。`);
     } catch (error) { announce(`無法建立 DOCX：${(error as Error).message}`, 'error'); }
     finally { setBusy(''); }
@@ -210,7 +210,7 @@ export function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><div className="brand-symbol"><BookOpen size={24} /></div><div><h1>Exam Studio <span>1.0</span></h1><p>從教材到試卷，你的本機命題工作台</p></div></div>
+      <div className="brand"><div className="brand-symbol"><BookOpen size={24} /></div><div><h1>QuizGenerator <span>1.0</span></h1><p>從教材到試卷，你的本機命題工作台</p></div></div>
       <div className="header-status"><button className={`ai-settings-toggle ${hasSessionKey(provider) && selectedModels[provider] ? 'ready' : ''}`} onClick={() => setApiSettingsOpen(true)}><KeyRound size={15} /><span><strong>AI 設定</strong><small>{hasSessionKey(provider) && selectedModels[provider] ? `${adapter.name} · ${selectedModels[provider]}` : '設定 API Key 與模型'}</small></span></button><span><ShieldCheck size={13} />教材直接傳至所選 AI</span><button onClick={() => void clearAll()} title="清除本機資料"><Trash2 size={15} /></button></div>
     </header>
     <nav className="stepper" aria-label="製作流程">{steps.map(([title, caption], index) => <button key={title} className={`${index === step ? 'active' : ''} ${canGo[index] ? 'available' : ''}`} onClick={() => canGo[index] && setStep(index)} disabled={!canGo[index]}><i>{index < step || (index === 0 && connected[provider]) ? <Check size={14} /> : index + 1}</i><span><strong>{title}</strong><small>{caption}</small></span></button>)}</nav>
