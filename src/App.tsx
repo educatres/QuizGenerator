@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp,
   CircleAlert, Copy, Download, Eye, EyeOff, FileCheck2, FilePlus2, FileText, KeyRound, LoaderCircle,
-  LockKeyhole, Plus, Printer, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
+  Plus, Printer, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
 } from 'lucide-react';
 import type { Difficulty, ExamMeta, GenerationSettings, MaterialDocument, ProviderId, Question, QuestionStatus, QuestionType } from './domain/types';
 import { difficultyLabels, now, questionTypeLabels, uid } from './domain/types';
-import { adapters, clearSessionKey, hasSessionKey, setSessionKey } from './providers';
+import { adapters, clearAllSessionKeys, clearSessionKey, hasSessionKey, setSessionKey } from './providers';
 import type { ModelOption } from './providers/types';
 import { extractPdf, extractTextFile, fromPastedText } from './services/pdfExtract';
 import { clearSnapshot, loadSnapshot, saveSnapshot } from './services/localDb';
@@ -17,17 +17,26 @@ const steps = [
 ] as const;
 const providerIds: ProviderId[] = ['cgu', 'openai', 'xai', 'gemini'];
 const defaultModels: Record<ProviderId, string> = { cgu: '', openai: 'gpt-4.1-mini', xai: 'grok-3-mini', gemini: 'gemini-2.5-flash' };
+const MODEL_CONFIG_STORAGE_KEY = 'teacher-exam-studio.model-config.v1';
 const defaultSettings: GenerationSettings = { counts: { single: 5, multiple: 2, true_false: 2, short_answer: 1 }, difficulty: 'medium', points: 10, language: 'zh-TW', instructions: '' };
 const defaultExam: ExamMeta = { title: '課堂學習評量', subtitle: '', duration: 50, seed: 2026 };
 
 function totalRequested(settings: GenerationSettings) { return Object.values(settings.counts).reduce((a, b) => a + b, 0); }
 function formatBytes(bytes: number) { return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
+function storedModelConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MODEL_CONFIG_STORAGE_KEY) || '{}') as { provider?: ProviderId; models?: Partial<Record<ProviderId, string>> };
+    return { provider: providerIds.includes(saved.provider as ProviderId) ? saved.provider as ProviderId : 'cgu' as ProviderId, models: { ...defaultModels, ...saved.models } };
+  } catch { return { provider: 'cgu' as ProviderId, models: defaultModels }; }
+}
 
 export function App() {
   const [step, setStep] = useState(0);
-  const [provider, setProvider] = useState<ProviderId>('cgu');
+  const initialModelConfig = useMemo(storedModelConfig, []);
+  const [provider, setProvider] = useState<ProviderId>(initialModelConfig.provider);
   const [models, setModels] = useState<Partial<Record<ProviderId, ModelOption[]>>>({});
-  const [selectedModels, setSelectedModels] = useState(defaultModels);
+  const [selectedModels, setSelectedModels] = useState(initialModelConfig.models);
+  const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState('');
@@ -54,6 +63,10 @@ export function App() {
     return () => clearTimeout(timer);
   }, [materials, questions, exam, hydrated]);
   useEffect(() => { setKeyDraft(''); setShowKey(false); setConnectionMessage(''); }, [provider]);
+  useEffect(() => {
+    try { localStorage.setItem(MODEL_CONFIG_STORAGE_KEY, JSON.stringify({ provider, models: selectedModels })); }
+    catch { /* Keep settings in memory when browser storage is unavailable. */ }
+  }, [provider, selectedModels]);
 
   const adapter = adapters[provider];
   const allChunks = useMemo(() => materials.flatMap(material => material.chunks), [materials]);
@@ -63,7 +76,7 @@ export function App() {
   const announce = (text: string, kind: 'success' | 'error' | 'info' = 'success') => { setNotice({ text, kind }); window.setTimeout(() => setNotice(undefined), 5000); };
 
   function saveKey() {
-    try { setSessionKey(provider, keyDraft); setKeyDraft(''); setShowKey(false); setConnectionMessage('金鑰已暫存在此分頁的記憶體中。'); }
+    try { setSessionKey(provider, keyDraft); setKeyDraft(''); setShowKey(false); setConnectionMessage('API Key 已保存在這個瀏覽器。請只在自己的裝置使用此功能。'); }
     catch (error) { setConnectionMessage((error as Error).message); }
   }
   async function listModels() {
@@ -71,8 +84,11 @@ export function App() {
     setBusy('models'); setConnectionMessage('');
     try {
       const list = await adapter.listModels(); setModels(state => ({ ...state, [provider]: list }));
-      if (!selectedModels[provider] && list[0]) setSelectedModels(state => ({ ...state, [provider]: list[0].id }));
-      setConnectionMessage(`取得 ${list.length} 個模型；清單可見不代表具有生成權限，請再測試連線。`);
+      const current = selectedModels[provider];
+      const selected = list.some(model => model.id === current) ? current : list[0]?.id || '';
+      setSelectedModels(state => ({ ...state, [provider]: selected }));
+      const luna = provider === 'cgu' && list[0] && /luna/i.test(`${list[0].id} ${list[0].label}`);
+      setConnectionMessage(list.length ? `已偵測 ${list.length} 個模型。${luna && selected === list[0].id ? `已預設選擇最新 Luna：${list[0].label}。` : ''}請再測試連線確認生成權限。` : 'API 沒有回傳可用模型。');
     } catch (error) { setConnectionMessage((error as Error).message); }
     finally { setBusy(''); }
   }
@@ -106,8 +122,8 @@ export function App() {
 
   async function generate() {
     if (!materials.length) return announce('請先加入教材。', 'error');
-    if (!hasSessionKey(provider)) return announce('API Key 已不存在，請回到第一步重新輸入。', 'error');
-    if (!selectedModels[provider]) return announce('請先選擇模型。', 'error');
+    if (!hasSessionKey(provider)) { setApiSettingsOpen(true); setStep(0); return announce('請先設定 API Key；設定面板已為你開啟。', 'error'); }
+    if (!selectedModels[provider]) { setApiSettingsOpen(true); setStep(0); return announce('請先偵測並選擇模型。', 'error'); }
     if (totalRequested(settings) < 1 || totalRequested(settings) > 50) return announce('一次請產生 1–50 題。', 'error');
     const controller = new AbortController(); generationController.current = controller; setBusy('generate');
     try {
@@ -136,26 +152,18 @@ export function App() {
       setQuestions(data.questions); if (data.exam) setExam(data.exam); announce(`已匯入 ${data.questions.length} 題。`);
     } catch (error) { announce(`匯入失敗：${(error as Error).message}`, 'error'); }
   }
-  async function clearAll() { if (!confirm('確定清除本機的教材、題庫與試卷設定？API Key 也會從記憶體清除。')) return; await clearSnapshot(); location.reload(); }
+  async function clearAll() { if (!confirm('確定清除這個瀏覽器保存的教材、題庫、試卷設定與所有 API Key？')) return; clearAllSessionKeys(); try { localStorage.removeItem(MODEL_CONFIG_STORAGE_KEY); } catch { /* Keep clearing other local data. */ } await clearSnapshot(); location.reload(); }
 
   return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><div className="brand-symbol"><BookOpen size={24} /></div><div><h1>Teacher Exam Studio <span>1.0</span></h1><p>從教材到試卷，你的本機命題工作台</p></div></div>
-      <div className="header-status"><span><LockKeyhole size={13} />API Key 不落地</span><span><ShieldCheck size={13} />教材直接傳至所選 AI</span><button onClick={() => void clearAll()} title="清除本機資料"><Trash2 size={15} /></button></div>
+      <div className="header-status"><button className={`ai-settings-toggle ${hasSessionKey(provider) && selectedModels[provider] ? 'ready' : ''}`} onClick={() => setApiSettingsOpen(true)}><KeyRound size={15} /><span><strong>AI 設定</strong><small>{hasSessionKey(provider) && selectedModels[provider] ? `${adapter.name} · ${selectedModels[provider]}` : '設定 API Key 與模型'}</small></span></button><span><ShieldCheck size={13} />教材直接傳至所選 AI</span><button onClick={() => void clearAll()} title="清除本機資料"><Trash2 size={15} /></button></div>
     </header>
     <nav className="stepper" aria-label="製作流程">{steps.map(([title, caption], index) => <button key={title} className={`${index === step ? 'active' : ''} ${canGo[index] ? 'available' : ''}`} onClick={() => canGo[index] && setStep(index)} disabled={!canGo[index]}><i>{index < step || (index === 0 && connected[provider]) ? <Check size={14} /> : index + 1}</i><span><strong>{title}</strong><small>{caption}</small></span></button>)}</nav>
     <main className="workspace">
-      {step === 0 && <section className="panel connection-panel"><PageHeading eyebrow="STEP 01 · BRING YOUR OWN KEY" title="連接你的 AI" description="金鑰只存於目前分頁的記憶體。重新整理或關閉分頁後即消失。" />
-        <div className="provider-tabs">{providerIds.map(id => <button key={id} className={provider === id ? 'active' : ''} onClick={() => setProvider(id)}><span>{id === 'cgu' ? '◈' : id === 'openai' ? '✳' : id === 'xai' ? '𝕏' : '✦'}</span>{adapters[id].name}{connected[id] && <i />}</button>)}</div>
-        <div className="endpoint"><span>BASE URL</span><code>{adapter.baseUrl}</code></div>
-        <div className="privacy-card"><ShieldCheck size={24} /><div><strong>你的金鑰不會被儲存</strong><p>不寫入 localStorage、IndexedDB、匯出檔或 Git。呼叫時僅以 HTTPS 傳給 {adapter.name}。</p></div></div>
-        <label className="field-label" htmlFor="api-key">API Key <span>{hasSessionKey(provider) ? '此分頁已設定' : '尚未設定'}</span></label>
-        <div className="key-input"><KeyRound size={17} /><input id="api-key" type={showKey ? 'text' : 'password'} autoComplete="off" value={keyDraft} placeholder={hasSessionKey(provider) ? '••••••••（已設定，可輸入新金鑰取代）' : '貼上你的 API Key'} onChange={e => setKeyDraft(e.target.value)} /><button disabled={!keyDraft} onClick={() => setShowKey(!showKey)} aria-label={showKey ? '隱藏金鑰' : '顯示金鑰'}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-        <div className="key-actions"><a href={adapter.keyUrl} target="_blank" rel="noreferrer">取得 {adapter.name} API Key ↗</a><div>{hasSessionKey(provider) && <button className="text-danger" onClick={() => { clearSessionKey(provider); setConnected(s => ({ ...s, [provider]: false })); setConnectionMessage('已清除分頁記憶體中的金鑰。'); }}><Trash2 size={13} />清除金鑰</button>}<button className="secondary" disabled={!keyDraft.trim()} onClick={saveKey}>使用此金鑰</button></div></div>
-        <div className="divider" />
-        <div className="model-row"><label><span>模型</span><input list="models" value={selectedModels[provider]} onChange={e => setSelectedModels(s => ({ ...s, [provider]: e.target.value.trim() }))} placeholder="輸入模型 ID" /></label><datalist id="models">{(models[provider] ?? []).map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</datalist><button className="secondary" disabled={!!busy || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void listModels()}>{busy === 'models' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}取得模型</button></div>
-        {connectionMessage && <div className={`inline-message ${connected[provider] ? 'success' : ''}`}>{connected[provider] ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />}<span>{connectionMessage}</span></div>}
-        <footer className="panel-actions"><span>測試會送出一則「只回覆 OK」並可能產生少量用量。</span><button className="secondary" disabled={!!busy || !selectedModels[provider] || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void testConnection()}>{busy === 'test' ? <LoaderCircle className="spin" size={16} /> : <Wifi size={16} />}測試連線</button><button className="primary" onClick={() => setStep(1)}>下一步：加入教材<ArrowRight size={16} /></button></footer>
+      {step === 0 && <section className="panel connection-panel"><PageHeading eyebrow="STEP 01 · BRING YOUR OWN KEY" title="連接你的 AI" description="需要設定或更換 AI 時才打開設定面板；完成後可直接沿用這個瀏覽器保存的設定。" />
+        <div className="connection-overview"><div className={`connection-orb ${hasSessionKey(provider) && selectedModels[provider] ? 'ready' : ''}`}>{hasSessionKey(provider) && selectedModels[provider] ? <Check size={28} /> : <KeyRound size={28} />}</div><p>{hasSessionKey(provider) && selectedModels[provider] ? 'AI 已準備完成' : '尚未完成 AI 設定'}</p><h3>{hasSessionKey(provider) && selectedModels[provider] ? adapter.name : '使用你自己的 API Key'}</h3><span>{hasSessionKey(provider) && selectedModels[provider] ? selectedModels[provider] : 'API Key 會保存在這個瀏覽器，且可隨時一鍵清除。'}</span><button className="primary settings-launch" onClick={() => setApiSettingsOpen(true)}><KeyRound size={16} />{hasSessionKey(provider) ? '查看或更改 AI 設定' : '設定 API Key 與模型'}</button><small><ShieldCheck size={13} />金鑰不會寫入題庫、匯出檔或 GitHub</small></div>
+        <footer className="panel-actions"><span>只有在產生題目與測試連線時，瀏覽器才會呼叫所選 AI。</span><span className="spacer" /><button className="primary" onClick={() => setStep(1)}>下一步：加入教材<ArrowRight size={16} /></button></footer>
       </section>}
 
       {step === 1 && <section className="panel"><PageHeading eyebrow="STEP 02 · LOCAL PARSING" title="加入命題教材" description="PDF、TXT 與 Markdown 只在瀏覽器解析；只有按下產生題目時，文字片段才會送給 AI。" />
@@ -169,7 +177,7 @@ export function App() {
       {step === 2 && <section className="panel"><PageHeading eyebrow="STEP 03 · QUESTION BLUEPRINT" title="設定題型與難度" description="AI 產生的都是候選題；答案、引文與評分準則需由教師在下一步確認。" />
         <div className="generation-grid"><div className="settings-card"><h3>題型與題數</h3>{(Object.keys(settings.counts) as QuestionType[]).map(type => <label className="count-row" key={type}><span>{questionTypeLabels[type]}<small>{type === 'single' ? '恰有一個正解' : type === 'multiple' ? '可有多個正解' : type === 'true_false' ? '正確或錯誤' : '參考答案與評分準則'}</small></span><input type="number" min="0" max="25" value={settings.counts[type]} onChange={e => setSettings(s => ({ ...s, counts: { ...s.counts, [type]: Math.max(0, Number(e.target.value)) } }))} /></label>)}</div>
           <div className="settings-card"><h3>命題條件</h3><label className="stack-field"><span>整體難度</span><select value={settings.difficulty} onChange={e => setSettings(s => ({ ...s, difficulty: e.target.value as Difficulty }))}>{(Object.keys(difficultyLabels) as Difficulty[]).map(d => <option value={d} key={d}>{difficultyLabels[d]}</option>)}</select></label><label className="stack-field"><span>每題預設配分</span><input type="number" min="1" max="100" value={settings.points} onChange={e => setSettings(s => ({ ...s, points: Number(e.target.value) }))} /></label><label className="stack-field"><span>額外命題要求</span><textarea rows={5} value={settings.instructions} onChange={e => setSettings(s => ({ ...s, instructions: e.target.value }))} placeholder="例如：著重概念應用，避免純記憶題…" /></label></div>
-          <aside className="generation-summary"><Sparkles size={26} /><span>這次將產生</span><strong>{totalRequested(settings)}</strong><b>題候選題</b><dl><div><dt>教材</dt><dd>{materials.length} 份</dd></div><div><dt>文字片段</dt><dd>{allChunks.length} 個</dd></div><div><dt>AI</dt><dd>{adapter.name}</dd></div><div><dt>模型</dt><dd>{selectedModels[provider] || '未選擇'}</dd></div></dl>{!hasSessionKey(provider) && <p className="warning"><CircleAlert size={14} />金鑰已因重新整理而清除，請回第一步輸入。</p>}<button className="generate-button" disabled={busy === 'generate' || !allChunks.length || !hasSessionKey(provider)} onClick={() => void generate()}>{busy === 'generate' ? <><LoaderCircle className="spin" />正在閱讀教材與命題…</> : <><Sparkles />產生候選題</>}</button>{busy === 'generate' && <button className="cancel" onClick={() => generationController.current?.abort()}>取消請求</button>}</aside></div>
+          <aside className="generation-summary"><Sparkles size={26} /><span>這次將產生</span><strong>{totalRequested(settings)}</strong><b>題候選題</b><dl><div><dt>教材</dt><dd>{materials.length} 份</dd></div><div><dt>文字片段</dt><dd>{allChunks.length} 個</dd></div><div><dt>AI</dt><dd>{adapter.name}</dd></div><div><dt>模型</dt><dd>{selectedModels[provider] || '未選擇'}</dd></div></dl>{!hasSessionKey(provider) && <p className="warning"><CircleAlert size={14} />尚未設定 API Key；按下產生題目時會自動開啟設定面板。</p>}<button className="generate-button" disabled={busy === 'generate' || !allChunks.length} onClick={() => void generate()}>{busy === 'generate' ? <><LoaderCircle className="spin" />正在閱讀教材與命題…</> : <><Sparkles />產生候選題</>}</button>{busy === 'generate' && <button className="cancel" onClick={() => generationController.current?.abort()}>取消請求</button>}</aside></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(1)}><ArrowLeft size={16} />上一步</button><span className="spacer" />{questions.length > 0 && <button className="secondary" onClick={() => setStep(3)}>查看已有 {questions.length} 題<ArrowRight size={16} /></button>}</footer>
       </section>}
 
@@ -186,6 +194,22 @@ export function App() {
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(3)}><ArrowLeft size={16} />回審核題庫</button><span className="spacer" /><span><ShieldCheck size={14} />已檢查：匯出檔不包含金鑰與教材全文</span></footer>
       </section>}
     </main>
+    {apiSettingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && setApiSettingsOpen(false)}><section className="api-settings-modal" role="dialog" aria-modal="true" aria-labelledby="api-settings-title">
+      <header className="modal-heading"><div><p>LOCAL AI CONNECTION</p><h2 id="api-settings-title">連接你的 AI</h2><span>設定保存在這個瀏覽器；下次開啟可直接沿用。</span></div><button onClick={() => setApiSettingsOpen(false)} aria-label="關閉 AI 設定"><X size={19} /></button></header>
+      <div className="modal-scroll">
+        <div className="provider-tabs">{providerIds.map(id => <button key={id} className={provider === id ? 'active' : ''} onClick={() => !busy && setProvider(id)} disabled={!!busy}><span>{id === 'cgu' ? '◈' : id === 'openai' ? '✳' : id === 'xai' ? '𝕏' : '✦'}</span>{adapters[id].name}{hasSessionKey(id) && <i />}</button>)}</div>
+        <div className="endpoint"><span>BASE URL</span><code>{adapter.baseUrl}</code></div>
+        <div className="privacy-card"><ShieldCheck size={23} /><div><strong>API Key 儲存在你的瀏覽器</strong><p>請只在信任的個人裝置使用。金鑰不會進入教材、題庫、匯出檔或 GitHub，並可隨時清除。</p></div></div>
+        <label className="field-label" htmlFor="api-key">API Key <span>{hasSessionKey(provider) ? '這個瀏覽器已保存' : '尚未設定'}</span></label>
+        <div className="key-input"><KeyRound size={17} /><input id="api-key" type={showKey ? 'text' : 'password'} autoComplete="off" value={keyDraft} placeholder={hasSessionKey(provider) ? '••••••••（輸入新金鑰可取代）' : '貼上你的 API Key'} onChange={e => setKeyDraft(e.target.value)} /><button disabled={!keyDraft} onClick={() => setShowKey(!showKey)} aria-label={showKey ? '隱藏金鑰' : '顯示金鑰'}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+        <div className="key-actions"><a href={adapter.keyUrl} target="_blank" rel="noreferrer">取得 {adapter.name} API Key ↗</a><div>{hasSessionKey(provider) && <button className="text-danger" onClick={() => { clearSessionKey(provider); setConnected(state => ({ ...state, [provider]: false })); setSelectedModels(state => ({ ...state, [provider]: '' })); setModels(state => ({ ...state, [provider]: [] })); setConnectionMessage('已清除這個瀏覽器保存的 API Key。'); }}><Trash2 size={13} />清除 API Key</button>}<button className="secondary" disabled={!keyDraft.trim() || !!busy} onClick={saveKey}>儲存 API Key</button></div></div>
+        <div className="divider" />
+        <div className="model-setting-heading"><div><strong>選擇模型</strong><span>{provider === 'cgu' ? '偵測後會優先選擇最新版 Luna，你仍可自行更換。' : '先取得帳戶可用模型，再選擇要使用的模型。'}</span></div><button className="secondary" disabled={!!busy || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void listModels()}>{busy === 'models' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}偵測模型</button></div>
+        {(models[provider]?.length ?? 0) > 0 ? <label className="stack-field model-select-field"><span>可用模型</span><select aria-label="可用模型" value={selectedModels[provider]} onChange={e => setSelectedModels(state => ({ ...state, [provider]: e.target.value }))}>{models[provider]!.map(model => <option key={model.id} value={model.id}>{model.label}{model.label !== model.id ? `（${model.id}）` : ''}</option>)}</select></label> : provider === 'cgu' ? <div className="model-placeholder">{selectedModels.cgu ? <>已保存模型：<strong>{selectedModels.cgu}</strong>。按「偵測模型」更新清單。</> : '尚未偵測 CGU 模型。儲存 Key 後按「偵測模型」。'}</div> : <label className="stack-field model-select-field"><span>模型 ID</span><input value={selectedModels[provider]} onChange={e => setSelectedModels(state => ({ ...state, [provider]: e.target.value.trim() }))} placeholder="輸入模型 ID，或按偵測模型" /></label>}
+        {connectionMessage && <div className={`inline-message ${connected[provider] ? 'success' : ''}`}>{connected[provider] ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />}<span>{connectionMessage}</span></div>}
+      </div>
+      <footer className="modal-actions"><span>測試會送出一則「只回覆 OK」，可能產生少量用量。</span><button className="secondary" disabled={!!busy || !selectedModels[provider] || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void testConnection()}>{busy === 'test' ? <LoaderCircle className="spin" size={16} /> : <Wifi size={16} />}測試連線</button><button className="primary" onClick={() => setApiSettingsOpen(false)}>完成</button></footer>
+    </section></div>}
     <footer className="app-footer"><span><i className={saved ? 'saved' : ''} />{saved ? '已保存於本機' : '保存中…'}</span><span>Browser-first · BYOK · zh-TW</span></footer>
     {notice && <div className={`toast ${notice.kind}`} role="status">{notice.kind === 'success' ? <CheckCircle2 /> : notice.kind === 'error' ? <XCircle /> : <LoaderCircle className={notice.kind === 'info' ? 'spin' : ''} />}<span>{notice.text}</span><button onClick={() => setNotice(undefined)}><X /></button></div>}
   </div>;

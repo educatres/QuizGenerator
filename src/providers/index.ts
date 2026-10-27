@@ -4,16 +4,33 @@ import { selectGenerationContext } from '../services/chunker';
 import { buildQuestionPrompt, systemGuard } from '../services/prompts';
 import type { GenerateRequest, ModelOption, ProviderAdapter } from './types';
 
-const sessionKeys = new Map<ProviderId, string>();
+const API_KEYS_STORAGE_KEY = 'teacher-exam-studio.api-keys.v1';
+
+function storedKeys(): Partial<Record<ProviderId, string>> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(API_KEYS_STORAGE_KEY) || '{}') as Partial<Record<ProviderId, unknown>>;
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'string')) as Partial<Record<ProviderId, string>>;
+  } catch { return {}; }
+}
+
+const sessionKeys = new Map<ProviderId, string>(Object.entries(storedKeys()).filter((entry): entry is [ProviderId, string] => !!entry[1]));
 export function setSessionKey(provider: ProviderId, key: string) {
   const cleaned = key.trim().replace(/^Authorization:\s*/i, '').replace(/^Bearer\s+/i, '');
   if (cleaned && !/^[\x21-\x7e]+$/.test(cleaned)) throw new Error('API Key 格式不正確，請勿包含空白或其他文字。');
   if (cleaned) sessionKeys.set(provider, cleaned); else sessionKeys.delete(provider);
+  try {
+    const keys = storedKeys();
+    if (cleaned) keys[provider] = cleaned; else delete keys[provider];
+    if (Object.keys(keys).length) localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
+    else localStorage.removeItem(API_KEYS_STORAGE_KEY);
+  } catch { /* Storage may be unavailable; the in-memory key remains usable. */ }
 }
 export const hasSessionKey = (provider: ProviderId) => sessionKeys.has(provider);
-export const clearSessionKey = (provider: ProviderId) => sessionKeys.delete(provider);
-export const clearAllSessionKeys = () => sessionKeys.clear();
-window.addEventListener('pagehide', clearAllSessionKeys);
+export function clearSessionKey(provider: ProviderId) { setSessionKey(provider, ''); }
+export function clearAllSessionKeys() {
+  sessionKeys.clear();
+  try { localStorage.removeItem(API_KEYS_STORAGE_KEY); } catch { /* Storage may be unavailable. */ }
+}
 
 const config = {
   cgu: { name: 'CGU LLM Gateway', baseUrl: 'https://air.cgu.edu.tw/cgullmapi/v1', keyUrl: 'https://air.cgu.edu.tw/workspace4/LLMAPI/index.php' },
@@ -32,6 +49,42 @@ function normalizeError(error: unknown, provider: ProviderId) {
   if (error instanceof DOMException && error.name === 'AbortError') return new Error('已取消產生題目。');
   if (error instanceof TypeError) return new Error(`瀏覽器無法連到 ${config[provider].name}。請檢查網路或該服務的 CORS 設定。`);
   return error instanceof Error ? error : new Error('發生未知錯誤。');
+}
+
+function modelTimestamp(model: Record<string, unknown>): number | undefined {
+  for (const key of ['updated', 'updated_at', 'updatedAt', 'updateTime', 'created', 'created_at', 'createdAt', 'createTime']) {
+    const value = model[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value < 10_000_000_000 ? value * 1000 : value;
+    if (typeof value === 'string' && value.trim()) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+      const parsed = Date.parse(value); if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function lunaVersion(model: ModelOption) {
+  const match = `${model.id} ${model.label}`.match(/luna[^0-9]*(\d+(?:\.\d+)*)/i);
+  return match ? match[1].split('.').map(Number) : [];
+}
+
+function compareVersion(left: number[], right: number[]) {
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const difference = (left[i] ?? 0) - (right[i] ?? 0); if (difference) return difference;
+  }
+  return 0;
+}
+
+export function sortCguModels(models: ModelOption[]): ModelOption[] {
+  return models.map((model, index) => ({ model, index, luna: /luna/i.test(`${model.id} ${model.label}`) })).sort((left, right) => {
+    if (left.luna !== right.luna) return left.luna ? -1 : 1;
+    if (left.luna && right.luna) {
+      if ((left.model.created ?? 0) !== (right.model.created ?? 0)) return (right.model.created ?? 0) - (left.model.created ?? 0);
+      const version = compareVersion(lunaVersion(right.model), lunaVersion(left.model)); if (version) return version;
+    }
+    return left.index - right.index;
+  }).map(({ model }) => model);
 }
 
 async function fetchJson(provider: ProviderId, path: string, init: RequestInit = {}) {
@@ -63,11 +116,12 @@ function createAdapter(id: ProviderId): ProviderAdapter {
     async listModels(): Promise<ModelOption[]> {
       if (id === 'gemini') {
         const data = await fetchJson(id, '/models?pageSize=100');
-        return (data.models ?? []).filter((m: { supportedGenerationMethods?: string[] }) => m.supportedGenerationMethods?.includes('generateContent')).map((m: { name: string; displayName?: string }) => ({ id: m.name.replace(/^models\//, ''), label: m.displayName || m.name }));
+        return (data.models ?? []).filter((m: { supportedGenerationMethods?: string[] }) => m.supportedGenerationMethods?.includes('generateContent')).map((m: Record<string, unknown>) => ({ id: String(m.name ?? '').replace(/^models\//, ''), label: String(m.displayName || m.name || ''), created: modelTimestamp(m) }));
       }
       const data = await fetchJson(id, id === 'xai' ? '/language-models' : '/models');
       const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
-      return list.map((m: { id: string; name?: string }) => ({ id: m.id, label: m.name || m.id })).filter((m: ModelOption) => m.id).sort((a: ModelOption, b: ModelOption) => a.id.localeCompare(b.id));
+      const mapped = list.map((m: Record<string, unknown>) => ({ id: String(m.id ?? m.name ?? '').replace(/^models\//, ''), label: String(m.displayName || m.name || m.id || ''), created: modelTimestamp(m) })).filter((m: ModelOption) => m.id);
+      return id === 'cgu' ? sortCguModels(mapped) : mapped.sort((a: ModelOption, b: ModelOption) => a.id.localeCompare(b.id));
     },
     async testGeneration(model: string) {
       if (!model.trim()) throw new Error('請先選擇模型。');
