@@ -3,7 +3,7 @@ import { z } from 'zod';
 const sourceSchema = z.object({
   documentId: z.string().min(1),
   chunkId: z.string().min(1),
-  pageNumber: z.number().int().positive().optional(),
+  pageNumber: z.number().int().positive().nullish().transform(value => value ?? undefined),
   quote: z.string().min(1).max(500),
 });
 
@@ -12,11 +12,13 @@ const optionSchema = z.object({ id: z.string().min(1), text: z.string().min(1) }
 export const generatedQuestionSchema = z.object({
   type: z.enum(['single', 'multiple', 'true_false', 'short_answer']),
   stem: z.string().min(3),
-  options: z.array(optionSchema).optional(),
-  correctOptionIds: z.array(z.string()).optional(),
-  correctBoolean: z.boolean().optional(),
-  referenceAnswer: z.string().optional(),
-  rubric: z.string().optional(),
+  // Models commonly emit null for fields that do not apply to a question type.
+  // Normalize those nulls while keeping type-specific requirements below strict.
+  options: z.array(optionSchema).nullish().transform(value => value ?? undefined),
+  correctOptionIds: z.array(z.string()).nullish().transform(value => value ?? undefined),
+  correctBoolean: z.boolean().nullish().transform(value => value ?? undefined),
+  referenceAnswer: z.string().nullish().transform(value => value ?? undefined),
+  rubric: z.string().nullish().transform(value => value ?? undefined),
   explanation: z.string().min(1),
   sources: z.array(sourceSchema).min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
