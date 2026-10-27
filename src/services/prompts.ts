@@ -3,9 +3,6 @@ import type { GenerationLanguage, GenerationSettings, PastExamStrategy } from '.
 const generationLanguageInstructions: Record<GenerationLanguage, string> = {
   'zh-TW': '繁體中文（台灣）',
   en: '英文（English）',
-  ja: '日文（日本語）',
-  ko: '韓文（한국어）',
-  fr: '法文（français）',
 };
 
 const pastExamInstructions: Record<PastExamStrategy, string> = {

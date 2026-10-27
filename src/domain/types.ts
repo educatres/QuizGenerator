@@ -2,7 +2,7 @@ export type ProviderId = 'cgu' | 'openai' | 'xai' | 'gemini';
 export type QuestionType = 'single' | 'multiple' | 'true_false' | 'short_answer';
 export type QuestionStatus = 'candidate' | 'accepted' | 'rejected';
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type GenerationLanguage = 'zh-TW' | 'en' | 'ja' | 'ko' | 'fr';
+export type GenerationLanguage = 'zh-TW' | 'en';
 export type PastExamStrategy = 'transform' | 'avoid';
 
 export interface SourceRef {
@@ -76,5 +76,5 @@ export const questionTypeLabels: Record<QuestionType, string> = {
 };
 export const difficultyLabels: Record<Difficulty, string> = { easy: '基礎', medium: '適中', hard: '進階' };
 export const generationLanguageLabels: Record<GenerationLanguage, string> = {
-  'zh-TW': '繁體中文', en: '英文', ja: '日文', ko: '韓文', fr: '法文',
+  'zh-TW': '繁體中文', en: '英文',
 };

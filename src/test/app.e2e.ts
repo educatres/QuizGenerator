@@ -45,8 +45,8 @@ test('accepts pasted teaching material and opens the blueprint', async ({ page }
   await page.getByRole('button', { name: /下一步：設定題型/ }).click();
   await expect(page.getByRole('heading', { name: '設定題型與難度' })).toBeVisible();
   await expect(page.getByText('10', { exact: true })).toBeVisible();
-  await page.getByLabel('出題語言').selectOption('ja');
-  await expect(page.locator('.generation-summary').getByText('日文', { exact: true })).toBeVisible();
+  await page.getByLabel('出題語言').selectOption('en');
+  await expect(page.locator('.generation-summary').getByText('英文', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '聚焦核心概念與推理，避免死記硬背。' }).click();
   await expect(page.getByLabel('額外命題要求')).toHaveValue('聚焦核心概念與推理，避免死記硬背。');
   await page.getByRole('button', { name: '產生候選題' }).click();

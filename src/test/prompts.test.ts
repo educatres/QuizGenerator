@@ -7,9 +7,6 @@ describe('question prompt past-exam guidance', () => {
   it.each([
     ['zh-TW', '繁體中文（台灣）'],
     ['en', '英文（English）'],
-    ['ja', '日文（日本語）'],
-    ['ko', '韓文（한국어）'],
-    ['fr', '法文（français）'],
   ] as const)('requests all question content in %s', (language, label) => {
     const prompt = buildQuestionPrompt({ ...settings, language }, '[教材片段]');
     expect(prompt).toContain(`出題語言：${label}`);
