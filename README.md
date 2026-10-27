@@ -14,10 +14,11 @@ Teacher Exam Studio 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_P
 1. 收合式 AI 設定按鈕；CGU LLM Gateway、OpenAI、xAI / Grok、Google Gemini Provider Adapter
 2. CGU 模型自動偵測下拉選單，首次偵測預設選擇 API 回傳的最新 Luna
 3. PDF.js Web Worker、CMap 與 standard fonts；TXT / Markdown / 貼上文字
-4. 單選、複選、是非與簡答題；來源引文驗證
-5. 題目編輯、接受／退回、複製、刪除、排序與版本紀錄
-6. A4 題本＋解答、離線互動測驗與 JSON 備份
-7. IndexedDB 自動保存、GitHub Pages 自動部署
+4. 內建「AI 概念入門」純文字範例，可一鍵載入並直接測試產題
+5. 單選、複選、是非與簡答題；來源引文會正規化比對並自動校正至實際教材片段
+6. 題目編輯、接受／退回、複製、刪除、排序與版本紀錄
+7. A4 題本＋解答、離線互動測驗與 JSON 備份
+8. IndexedDB 自動保存、GitHub Pages 自動部署
 
 ## 本機開發
 

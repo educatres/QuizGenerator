@@ -6,8 +6,18 @@ test('opens the five-step local-first workflow', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '連接你的 AI' })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '連接你的 AI' })).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: '製作流程' }).getByRole('button')).toHaveCount(5);
+  await expect(page.locator('.app-footer')).toHaveCount(0);
   await page.getByRole('button', { name: /下一步：加入教材/ }).click();
   await expect(page.getByRole('heading', { name: '加入命題教材' })).toBeVisible();
+});
+
+test('loads the AI concepts sample material', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /下一步：加入教材/ }).click();
+  await page.getByRole('button', { name: /載入 AI 概念入門範例/ }).click();
+  await expect(page.getByText('AI_概念入門_範例.txt')).toBeVisible();
+  await expect(page.getByText(/已載入「AI 概念入門」範例/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /下一步：設定題型/ })).toBeEnabled();
 });
 
 test('opens API settings on demand and persists a key in this browser', async ({ page }) => {
@@ -34,5 +44,7 @@ test('accepts pasted teaching material and opens the blueprint', async ({ page }
   await expect(page.getByText('10', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '產生候選題' }).click();
   await expect(page.getByRole('dialog', { name: '連接你的 AI' })).toBeVisible();
+  await expect(page.getByText('請先設定 API Key；設定面板已為你開啟。')).toBeVisible();
+  await page.waitForTimeout(5_200);
   await expect(page.getByText('請先設定 API Key；設定面板已為你開啟。')).toBeVisible();
 });

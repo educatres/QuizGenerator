@@ -11,6 +11,7 @@ import type { ModelOption } from './providers/types';
 import { extractPdf, extractTextFile, fromPastedText } from './services/pdfExtract';
 import { clearSnapshot, loadSnapshot, saveSnapshot } from './services/localDb';
 import { createInteractiveHtml, createPrintHtml, downloadText } from './services/exportHtml';
+import { reconcileQuestionSources } from './services/sourceValidation';
 
 const steps = [
   ['AI 設定', '連接模型'], ['加入教材', '本機解析'], ['出題設定', '建立題目'], ['審核題庫', '教師把關'], ['匯出試卷', '列印與測驗'],
@@ -51,15 +52,14 @@ export function App() {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
   const [hydrated, setHydrated] = useState(false);
-  const [saved, setSaved] = useState(true);
   const generationController = useRef<AbortController | undefined>(undefined);
+  const noticeTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void loadSnapshot().then(snapshot => { if (snapshot) { setMaterials(snapshot.materials); setQuestions(snapshot.questions); setExam(snapshot.exam); } setHydrated(true); }); }, []);
   useEffect(() => {
     if (!hydrated) return;
-    setSaved(false);
-    const timer = window.setTimeout(() => void saveSnapshot({ materials, questions, exam }).then(() => setSaved(true)), 450);
+    const timer = window.setTimeout(() => void saveSnapshot({ materials, questions, exam }), 450);
     return () => clearTimeout(timer);
   }, [materials, questions, exam, hydrated]);
   useEffect(() => { setKeyDraft(''); setShowKey(false); setConnectionMessage(''); }, [provider]);
@@ -73,7 +73,12 @@ export function App() {
   const accepted = questions.filter(q => q.status === 'accepted');
   const visibleQuestions = questions.filter(q => reviewFilter === 'all' || q.status === reviewFilter);
   const canGo = [true, true, materials.length > 0, questions.length > 0, accepted.length > 0];
-  const announce = (text: string, kind: 'success' | 'error' | 'info' = 'success') => { setNotice({ text, kind }); window.setTimeout(() => setNotice(undefined), 5000); };
+  const announce = (text: string, kind: 'success' | 'error' | 'info' = 'success') => {
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    setNotice({ text, kind });
+    // Errors stay visible for debugging until the user explicitly closes them.
+    if (kind !== 'error') noticeTimer.current = window.setTimeout(() => setNotice(undefined), 5000);
+  };
 
   function saveKey() {
     try { setSessionKey(provider, keyDraft); setKeyDraft(''); setShowKey(false); setConnectionMessage('API Key 已保存在這個瀏覽器。請只在自己的裝置使用此功能。'); }
@@ -119,6 +124,20 @@ export function App() {
     if (pasteText.trim().length < 20) return announce('請貼上至少 20 個字的教材內容。', 'error');
     const material = fromPastedText(pasteText); setMaterials(state => [...state, material]); setPasteText(''); setExpandedMaterial(material.id); announce('已加入貼上文字。');
   }
+  async function addExampleMaterial() {
+    setBusy('example');
+    try {
+      const existing = materials.find(item => item.name === 'AI_概念入門_範例.txt');
+      if (existing) { setExpandedMaterial(existing.id); announce('「AI 概念入門」範例已在教材清單中。', 'info'); return; }
+      const response = await fetch(`${import.meta.env.BASE_URL}examples/ai-concepts.txt`);
+      if (!response.ok) throw new Error(`無法讀取範例資料（HTTP ${response.status}）。`);
+      const text = await response.text();
+      const material = { ...fromPastedText(text), name: 'AI_概念入門_範例.txt', kind: 'txt' as const };
+      setMaterials(state => [...state, material]);
+      setExpandedMaterial(material.id); announce('已載入「AI 概念入門」範例，可直接前往出題設定。');
+    } catch (error) { announce((error as Error).message, 'error'); }
+    finally { setBusy(''); }
+  }
 
   async function generate() {
     if (!materials.length) return announce('請先加入教材。', 'error');
@@ -128,13 +147,9 @@ export function App() {
     const controller = new AbortController(); generationController.current = controller; setBusy('generate');
     try {
       const generated = await adapter.generateQuestions({ model: selectedModels[provider], chunks: allChunks, settings, signal: controller.signal });
-      const chunkMap = new Map(allChunks.map(chunk => [chunk.id, chunk]));
-      const invalidSource = generated.find(q => q.sources.some(source => {
-        const chunk = chunkMap.get(source.chunkId); return !chunk || chunk.documentId !== source.documentId || !chunk.text.includes(source.quote.trim());
-      }));
-      if (invalidSource) throw new Error('模型回傳的來源引文無法在教材中驗證；未加入題庫，請重試。');
-      const enriched: Question[] = generated.map(q => ({ ...q, id: uid(), status: 'candidate', revision: 1, providerId: provider, modelId: selectedModels[provider], createdAt: now() }));
-      setQuestions(state => [...state, ...enriched]); setStep(3); announce(`已建立 ${enriched.length} 題候選題，請逐題審核。`);
+      const verified = reconcileQuestionSources(generated, allChunks);
+      const enriched: Question[] = verified.questions.map(q => ({ ...q, id: uid(), status: 'candidate', revision: 1, providerId: provider, modelId: selectedModels[provider], createdAt: now() }));
+      setQuestions(state => [...state, ...enriched]); setStep(3); announce(`已建立 ${enriched.length} 題候選題${verified.repairedCount ? `，並校正 ${verified.repairedCount} 則來源引文` : ''}，請逐題審核。`);
     } catch (error) { announce((error as Error).message, 'error'); }
     finally { setBusy(''); generationController.current = undefined; }
   }
@@ -169,6 +184,7 @@ export function App() {
       {step === 1 && <section className="panel"><PageHeading eyebrow="STEP 02 · LOCAL PARSING" title="加入命題教材" description="PDF、TXT 與 Markdown 只在瀏覽器解析；只有按下產生題目時，文字片段才會送給 AI。" />
         <div className="material-layout"><div>
           <button className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void importFiles(e.dataTransfer.files); }}><Upload size={28} /><strong>{busy === 'import' ? '正在本機解析…' : '拖放或選擇教材檔案'}</strong><span>PDF · TXT · MD　PDF 上限 100 MB</span></button><input ref={fileInput} hidden type="file" accept=".pdf,.txt,.md,.markdown" multiple onChange={e => e.target.files && void importFiles(e.target.files)} />
+          <button className="example-material-button" disabled={!!busy} onClick={() => void addExampleMaterial()}>{busy === 'example' ? <LoaderCircle className="spin" size={17} /> : <BookOpen size={17} />}<span><strong>載入 AI 概念入門範例</strong><small>純文字教材，可直接用來測試產題流程</small></span><ArrowRight size={15} /></button>
           <div className="or"><span>或貼上文字</span></div><textarea className="paste-area" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="貼上講義、文章或課程內容…" rows={7} /><button className="secondary add-paste" onClick={addPasted}><Plus size={15} />加入文字教材</button>
         </div><div className="material-list"><div className="list-heading"><span>教材清單</span><b>{materials.length} 份 · {allChunks.length} 個片段</b></div>{!materials.length ? <Empty icon={<FilePlus2 />} title="尚未加入教材" text="解析後可檢查擷取文字與頁碼，再交給 AI 出題。" /> : materials.map(material => <article key={material.id} className="material-card"><button className="material-summary" onClick={() => setExpandedMaterial(expandedMaterial === material.id ? undefined : material.id)}><FileText size={20} /><span><strong>{material.name}</strong><small>{material.kind.toUpperCase()} · {material.pageCount ? `${material.pageCount} 頁 · ` : ''}{material.characterCount.toLocaleString()} 字 · {formatBytes(material.size)}</small></span>{expandedMaterial === material.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>{material.warning && <p className="warning"><CircleAlert size={14} />{material.warning}</p>}{expandedMaterial === material.id && <div className="material-preview">{material.chunks.slice(0, 3).map(chunk => <div key={chunk.id}><b>{chunk.pageNumber ? `第 ${chunk.pageNumber} 頁` : chunk.id}</b><p>{chunk.text.slice(0, 550)}{chunk.text.length > 550 ? '…' : ''}</p></div>)}{material.chunks.length > 3 && <small>另有 {material.chunks.length - 3} 個片段</small>}</div>}<button className="remove" onClick={() => setMaterials(state => state.filter(d => d.id !== material.id))} aria-label={`移除 ${material.name}`}><X size={15} /></button></article>)}</div></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(0)}><ArrowLeft size={16} />上一步</button><span className="spacer" /><button className="primary" disabled={!materials.length} onClick={() => setStep(2)}>下一步：設定題型<ArrowRight size={16} /></button></footer>
@@ -210,8 +226,7 @@ export function App() {
       </div>
       <footer className="modal-actions"><span>測試會送出一則「只回覆 OK」，可能產生少量用量。</span><button className="secondary" disabled={!!busy || !selectedModels[provider] || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void testConnection()}>{busy === 'test' ? <LoaderCircle className="spin" size={16} /> : <Wifi size={16} />}測試連線</button><button className="primary" onClick={() => setApiSettingsOpen(false)}>完成</button></footer>
     </section></div>}
-    <footer className="app-footer"><span><i className={saved ? 'saved' : ''} />{saved ? '已保存於本機' : '保存中…'}</span><span>Browser-first · BYOK · zh-TW</span></footer>
-    {notice && <div className={`toast ${notice.kind}`} role="status">{notice.kind === 'success' ? <CheckCircle2 /> : notice.kind === 'error' ? <XCircle /> : <LoaderCircle className={notice.kind === 'info' ? 'spin' : ''} />}<span>{notice.text}</span><button onClick={() => setNotice(undefined)}><X /></button></div>}
+    {notice && <div className={`toast ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.kind === 'success' ? <CheckCircle2 /> : notice.kind === 'error' ? <XCircle /> : <LoaderCircle className={notice.kind === 'info' ? 'spin' : ''} />}<span>{notice.text}</span><button onClick={() => setNotice(undefined)} aria-label="關閉訊息"><X /></button></div>}
   </div>;
 }
 
