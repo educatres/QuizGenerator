@@ -1,5 +1,7 @@
 # QuizGenerator
 
+![QuizGenerator：從教材到試卷](./docs/images/fromSlideToQuiz.png)
+
 QuizGenerator 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md) 實作的 browser-first 智慧出題與試卷製作工具。它可在瀏覽器本機解析 PDF、TXT 與 Markdown，以使用者自己的 API Key 呼叫 AI，再由教師審核並匯出 A4 試卷或 JSON 題庫。
 
 ## 隱私設計
@@ -41,3 +43,7 @@ Provider 與 CORS 注意事項請見 [`docs/provider-compatibility.md`](./docs/p
 ## GitHub Pages
 
 推送至 `main` 後，`.github/workflows/deploy.yml` 會執行測試、建置並發布 `dist`。Repository 的 Pages Source 需設為 **GitHub Actions**。
+
+## 授權
+
+本專案採用 [MIT License](./LICENSE) 授權；可自由使用、複製、修改與散布，但須保留原始著作權與授權聲明。
