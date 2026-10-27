@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp,
   CircleAlert, Copy, Download, Eye, EyeOff, FileCheck2, FilePlus2, FileText, KeyRound, LoaderCircle,
-  Plus, Printer, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
+  Plus, Printer, QrCode, RefreshCw, ShieldCheck, Sparkles, Trash2, Upload, Wifi, X, XCircle,
 } from 'lucide-react';
 import type { Difficulty, ExamMeta, GenerationSettings, MaterialDocument, ProviderId, Question, QuestionStatus, QuestionType } from './domain/types';
 import { difficultyLabels, now, questionTypeLabels, uid } from './domain/types';
@@ -10,7 +10,7 @@ import { adapters, clearAllSessionKeys, clearSessionKey, hasSessionKey, setSessi
 import type { ModelOption } from './providers/types';
 import { extractPdf, extractTextFile, fromPastedText } from './services/pdfExtract';
 import { clearSnapshot, loadSnapshot, saveSnapshot } from './services/localDb';
-import { createPrintHtml, downloadText } from './services/exportHtml';
+import { createMarkingHtml, createPrintHtml, downloadText } from './services/exportHtml';
 import { reconcileQuestionSources } from './services/sourceValidation';
 
 const steps = [
@@ -161,6 +161,14 @@ export function App() {
   }
   function duplicateQuestion(question: Question) { setQuestions(state => [...state, { ...structuredClone(question), id: uid(), stem: `${question.stem}（副本）`, status: 'candidate', revision: 1, createdAt: now() }]); }
   function exportJson() { downloadText('exam-studio.json', JSON.stringify({ version: 1, exportedAt: now(), exam, questions }, null, 2), 'application/json'); }
+  async function exportMarkingExam() {
+    setBusy('export-marking');
+    try {
+      downloadText('exam-studio-ai-marking-ab.html', await createMarkingHtml(exam, accepted));
+      announce('AI 劃卡 A／B 卷已建立；每題題號均附有 QR Code。');
+    } catch (error) { announce(`無法建立劃卡卷：${(error as Error).message}`, 'error'); }
+    finally { setBusy(''); }
+  }
   async function importJson(file: File) {
     try {
       const data = JSON.parse(await file.text());
@@ -204,10 +212,10 @@ export function App() {
         <footer className="panel-actions sticky-actions"><button className="secondary" onClick={() => setStep(2)}><ArrowLeft size={16} />回出題設定</button><span>{accepted.length} 題已接受 · 共 {accepted.reduce((sum, q) => sum + q.points, 0)} 分</span><span className="spacer" /><button className="primary" disabled={!accepted.length} onClick={() => setStep(4)}>下一步：匯出試卷<ArrowRight size={16} /></button></footer>
       </section>}
 
-      {step === 4 && <section className="panel"><PageHeading eyebrow="STEP 05 · EXPORT" title="匯出與列印" description="所有檔案都在瀏覽器內產生，不含 API Key。HTML 可離線使用，不依賴本站或 CDN。" />
-        <div className="export-layout"><div className="settings-card exam-meta"><h3>試卷資訊</h3><label className="stack-field"><span>試卷標題</span><input value={exam.title} onChange={e => setExam(s => ({ ...s, title: e.target.value }))} /></label><label className="stack-field"><span>副標題／科目</span><input value={exam.subtitle} onChange={e => setExam(s => ({ ...s, subtitle: e.target.value }))} placeholder="例如：自然科第三單元" /></label><div className="two-fields"><label className="stack-field"><span>作答時間（分鐘）</span><input type="number" min="1" value={exam.duration} onChange={e => setExam(s => ({ ...s, duration: Number(e.target.value) }))} /></label><label className="stack-field"><span>固定亂數種子</span><input type="number" value={exam.seed} onChange={e => setExam(s => ({ ...s, seed: Number(e.target.value) }))} /></label></div><p className="field-help">相同亂數種子會維持相同題序，方便重製試卷。</p></div>
-          <div className="export-preview"><div className="paper-preview"><span>A4</span><h3>{exam.title || '未命名試卷'}</h3><p>{exam.subtitle}</p><div>班級 ______　姓名 ______</div>{accepted.slice(0, 4).map((q, i) => <p key={q.id}><b>{i + 1}.</b> {q.stem}</p>)}</div><dl><div><dt>題數</dt><dd>{accepted.length}</dd></div><div><dt>總分</dt><dd>{accepted.reduce((sum, q) => sum + q.points, 0)}</dd></div><div><dt>簡答題</dt><dd>{accepted.filter(q => q.type === 'short_answer').length}</dd></div></dl></div>
-          <div className="export-cards"><button onClick={() => downloadText('exam-print-a4.html', createPrintHtml(exam, accepted))}><Printer /><span><strong>A4 試卷＋解答</strong><small>單一離線 HTML，含題本與分頁解答</small></span><Download /></button><button onClick={exportJson}><FileText /><span><strong>題庫 JSON</strong><small>可備份完整題庫與修訂資訊；不含 API Key</small></span><Download /></button><label className="import-json"><Upload /><span><strong>匯入題庫 JSON</strong><small>載入先前匯出的題庫</small></span><input type="file" accept="application/json,.json" onChange={e => e.target.files?.[0] && void importJson(e.target.files[0])} /></label></div></div>
+      {step === 4 && <section className="panel"><PageHeading eyebrow="STEP 05 · EXPORT" title="匯出與列印" description="一般卷與 AI 劃卡卷都會產生題目相同、題序與題號不同的 A／B 卷；HTML 可完全離線使用。" />
+        <div className="export-layout"><div className="settings-card exam-meta"><h3>試卷資訊</h3><label className="stack-field"><span>試卷標題</span><input value={exam.title} onChange={e => setExam(s => ({ ...s, title: e.target.value }))} /></label><label className="stack-field"><span>副標題／科目</span><input value={exam.subtitle} onChange={e => setExam(s => ({ ...s, subtitle: e.target.value }))} placeholder="例如：自然科第三單元" /></label><div className="two-fields"><label className="stack-field"><span>作答時間（分鐘）</span><input type="number" min="1" value={exam.duration} onChange={e => setExam(s => ({ ...s, duration: Number(e.target.value) }))} /></label><label className="stack-field"><span>固定亂數種子</span><input type="number" value={exam.seed} onChange={e => setExam(s => ({ ...s, seed: Number(e.target.value) }))} /></label></div><p className="field-help">相同亂數種子會維持相同的 A／B 題序，方便重製試卷。</p></div>
+          <div className="export-preview"><div className="paper-preview"><span>A4 · A／B</span><h3>{exam.title || '未命名試卷'}</h3><p>{exam.subtitle}</p><div>班級 ______　姓名 ______</div>{accepted.slice(0, 4).map((q, i) => <p key={q.id}><b>{i + 1}.</b> {q.stem}</p>)}</div><dl><div><dt>每卷題數</dt><dd>{accepted.length}</dd></div><div><dt>每卷總分</dt><dd>{accepted.reduce((sum, q) => sum + q.points, 0)}</dd></div><div><dt>卷別</dt><dd>2</dd></div></dl></div>
+          <div className="export-cards"><button onClick={() => downloadText('exam-studio-ab.html', createPrintHtml(exam, accepted))}><Printer /><span><strong>A／B 試卷＋解答</strong><small>相同題目以不同題序編號，附兩卷解答</small></span><Download /></button><button disabled={busy === 'export-marking'} onClick={() => void exportMarkingExam()}>{busy === 'export-marking' ? <LoaderCircle className="spin" /> : <QrCode />}<span><strong>AI 劃卡 A／B 卷</strong><small>每題題號附 QR Code、作答圈與批改清單</small></span><Download /></button><button onClick={exportJson}><FileText /><span><strong>題庫 JSON</strong><small>可備份完整題庫與修訂資訊；不含 API Key</small></span><Download /></button><label className="import-json"><Upload /><span><strong>匯入題庫 JSON</strong><small>載入先前匯出的題庫</small></span><input type="file" accept="application/json,.json" onChange={e => e.target.files?.[0] && void importJson(e.target.files[0])} /></label></div></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(3)}><ArrowLeft size={16} />回審核題庫</button><span className="spacer" /><span><ShieldCheck size={14} />已檢查：匯出檔不包含金鑰與教材全文</span></footer>
       </section>}
     </main>
