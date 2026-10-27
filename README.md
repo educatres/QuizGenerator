@@ -1,6 +1,6 @@
-# Teacher Exam Studio
+# Exam Studio
 
-Teacher Exam Studio 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md) 實作的 browser-first 智慧出題與試卷製作工具。它可在瀏覽器本機解析 PDF、TXT 與 Markdown，以使用者自己的 API Key 呼叫 AI，再由教師審核並匯出 A4 試卷、互動測驗或 JSON 題庫。
+Exam Studio 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md) 實作的 browser-first 智慧出題與試卷製作工具。它可在瀏覽器本機解析 PDF、TXT 與 Markdown，以使用者自己的 API Key 呼叫 AI，再由教師審核並匯出 A4 試卷或 JSON 題庫。
 
 ## 隱私設計
 
@@ -17,7 +17,7 @@ Teacher Exam Studio 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_P
 4. 內建「AI 概念入門」純文字範例，可一鍵載入並直接測試產題
 5. 單選、複選、是非與簡答題；來源引文會正規化比對並自動校正至實際教材片段
 6. 題目編輯、接受／退回、複製、刪除、排序與版本紀錄
-7. A4 題本＋解答、離線互動測驗與 JSON 備份
+7. A4 題本＋解答與 JSON 備份
 8. IndexedDB 自動保存、GitHub Pages 自動部署
 
 ## 本機開發
