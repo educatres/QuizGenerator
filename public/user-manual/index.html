@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuizGenerator 使用手冊</title>
+    <style>
+      :root {
+        --ink: #432f24;
+        --muted: #76685d;
+        --accent: #6a412d;
+        --accent-soft: #f2e5d8;
+        --paper: #fffdf8;
+        --canvas: #e9dfd3;
+        --line: #dfd1c2;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--canvas);
+        font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+        line-height: 1.7;
+      }
+      a { color: inherit; }
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px max(16px, calc((100vw - 1120px) / 2));
+        border-bottom: 1px solid #cdbdad;
+        background: #fffdf8e8;
+        backdrop-filter: blur(12px);
+      }
+      .toolbar strong { letter-spacing: .08em; }
+      .toolbar__actions { display: flex; gap: 8px; }
+      .toolbar button, .toolbar a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 36px;
+        padding: 7px 12px;
+        border: 1px solid #cdb8a6;
+        border-radius: 7px;
+        background: var(--paper);
+        color: var(--accent);
+        font: inherit;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .toolbar button:hover, .toolbar a:hover { background: var(--accent-soft); }
+      .deck {
+        display: grid;
+        justify-items: center;
+        gap: 26px;
+        padding: 28px 14px 52px;
+      }
+      .slide {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: min(100%, 210mm);
+        min-height: 297mm;
+        padding: 15mm 16mm 13mm;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--paper);
+        box-shadow: 0 18px 44px #50382122;
+        scroll-snap-align: start;
+      }
+      .slide::after {
+        position: absolute;
+        right: 16mm;
+        bottom: 8mm;
+        color: #a89586;
+        content: attr(data-page);
+        font-size: 10pt;
+        letter-spacing: .12em;
+      }
+      .slide--cover {
+        justify-content: center;
+        background: linear-gradient(145deg, #fffdf8 0%, #f4e5d4 100%);
+      }
+      .cover__mark {
+        display: grid;
+        width: 68px;
+        height: 68px;
+        place-items: center;
+        margin-bottom: 24px;
+        border-radius: 18px 18px 18px 5px;
+        background: var(--accent);
+        color: #fffaf3;
+        font-size: 32px;
+      }
+      .eyebrow {
+        margin: 0 0 6px;
+        color: #9b6a4b;
+        font-size: 11pt;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+      }
+      h1, h2, h3 { font-family: Georgia, "Noto Serif TC", serif; font-weight: 500; }
+      h1 { max-width: 620px; margin: 0; font-size: clamp(34px, 7vw, 62px); line-height: 1.18; }
+      h2 { margin: 0; font-size: 28px; line-height: 1.3; }
+      h3 { margin: 0; font-size: 18px; }
+      .cover__lead { max-width: 620px; margin: 18px 0 30px; color: var(--muted); font-size: 16px; }
+      .cover__steps {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 7px;
+        max-width: 720px;
+        margin-top: 20px;
+      }
+      .cover__steps span {
+        padding: 10px 6px;
+        border-top: 2px solid #b78d6e;
+        color: var(--muted);
+        font-size: 11pt;
+        text-align: center;
+      }
+      .cover__note {
+        max-width: 620px;
+        margin-top: 36px;
+        padding: 13px 16px;
+        border: 1px solid #e3cdb9;
+        border-radius: 8px;
+        background: #fffaf0b8;
+        color: #6d5749;
+      }
+      .slide__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .slide__header p { max-width: 520px; margin: 8px 0 0; color: var(--muted); }
+      .slide__badge {
+        flex: 0 0 auto;
+        padding: 5px 10px;
+        border: 1px solid #d8b99d;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 10pt;
+        letter-spacing: .08em;
+      }
+      .slide__body { display: grid; grid-template-columns: 1fr .82fr; gap: 20px; flex: 1; padding-top: 18px; }
+      .slide__body--wide { display: flex; flex-direction: column; }
+      .instructions { margin: 0; padding-left: 23px; }
+      .instructions li { margin-bottom: 11px; padding-left: 4px; }
+      .instructions strong { color: var(--accent); }
+      .tip {
+        margin-top: 18px;
+        padding: 12px 14px;
+        border-left: 4px solid #ba8b68;
+        border-radius: 0 7px 7px 0;
+        background: #f7eee5;
+        color: #6a5548;
+      }
+      .figure {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 0;
+        margin: 0;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: #f8f1e8;
+      }
+      .figure img { display: block; max-width: 100%; max-height: 171mm; object-fit: contain; border: 1px solid #e3d7ca; background: white; }
+      .figure figcaption { width: 100%; margin-top: 9px; color: var(--muted); font-size: 10.5pt; line-height: 1.55; }
+      .figure figcaption strong { color: var(--accent); }
+      .checklist { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin-top: 12px; }
+      .checklist div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: #fffaf4; }
+      .checklist b { display: block; color: var(--accent); }
+      .footer-note { margin-top: auto; padding-top: 16px; color: var(--muted); font-size: 10.5pt; }
+
+      @media (max-width: 760px) {
+        .toolbar { align-items: flex-start; flex-direction: column; }
+        .slide { min-height: 0; padding: 28px 22px 48px; }
+        .slide__body { grid-template-columns: 1fr; }
+        .figure img { max-height: none; }
+        .cover__steps { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media print {
+        @page { size: A4 portrait; margin: 0; }
+        html, body { background: white; }
+        .toolbar { display: none; }
+        .deck { display: block; padding: 0; }
+        .slide {
+          width: 210mm;
+          height: 297mm;
+          min-height: 0;
+          margin: 0;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+          break-after: page;
+          page-break-after: always;
+        }
+        .slide:last-child { break-after: auto; page-break-after: auto; }
+        .figure img { max-height: 166mm; }
+        a { text-decoration: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="toolbar" aria-label="使用手冊工具列">
+      <strong>QuizGenerator · 使用手冊</strong>
+      <div class="toolbar__actions">
+        <a href="../">回到 QuizGenerator</a>
+        <button type="button" onclick="window.print()">列印／另存 PDF</button>
+        <button type="button" id="previous" aria-label="上一頁">←</button>
+        <span id="counter" aria-live="polite" style="align-self:center;min-width:54px;text-align:center">1 / 7</span>
+        <button type="button" id="next" aria-label="下一頁">→</button>
+      </div>
+    </header>
+
+    <main class="deck" id="deck">
+      <section class="slide slide--cover" data-page="01 / 07" aria-labelledby="cover-title">
+        <div class="cover__mark" aria-hidden="true">✎</div>
+        <p class="eyebrow">QuizGenerator · 操作手冊</p>
+        <h1 id="cover-title">從教材到試卷，完成一套可審核的 AI 命題流程</h1>
+        <p class="cover__lead">本手冊以實際操作畫面說明五個步驟。每一頁都是獨立的 A4 投影片版面，可直接列印或另存為 PDF。</p>
+        <div class="cover__steps" aria-label="五個操作步驟">
+          <span>01<br />連接 AI</span><span>02<br />加入教材</span><span>03<br />設定題型</span><span>04<br />審核題庫</span><span>05<br />匯出試卷</span>
+        </div>
+        <p class="cover__note"><strong>閱讀方式：</strong>畫面中的按鈕名稱與手冊文字一致；遇到錯誤時，先依頁面提示清除題目，再重新產生。</p>
+      </section>
+
+      <section class="slide" data-page="02 / 07" aria-labelledby="connect-title">
+        <header class="slide__header"><div><p class="eyebrow">STEP 01 · BRING YOUR OWN KEY</p><h2 id="connect-title">連接你的 AI</h2><p>先選擇要使用的 AI Provider，再進入設定面板儲存 API Key 與模型。</p></div><span class="slide__badge">開始</span></header>
+        <div class="slide__body">
+          <div>
+            <ol class="instructions">
+              <li>在標題列點選<strong>「AI 設定」</strong>，開啟連線設定。</li>
+              <li>選擇 <strong>CGU LLM Gateway</strong>、OpenAI、xAI／Grok 或 Google Gemini。</li>
+              <li>完成設定後，首頁會顯示目前 Provider 與模型；按<strong>「下一步：加入教材」</strong>繼續。</li>
+            </ol>
+            <div class="tip"><strong>CGU 使用提示：</strong>選擇 CGU LLM Gateway 時，這個區塊會顯示長庚大學校園線稿背景，方便辨識目前的校園 Gateway 設定。</div>
+          </div>
+          <figure class="figure"><img src="images/01-connect-ai.png" alt="QuizGenerator 首頁連接你的 AI，顯示 CGU LLM Gateway 與長庚校園線稿背景" /><figcaption><strong>圖 01｜首頁 AI 連線狀態。</strong>確認目前 Provider、模型與「AI 已準備完成」後，再進入教材解析。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-page="03 / 07" aria-labelledby="settings-title">
+        <header class="slide__header"><div><p class="eyebrow">AI CONNECTION SETTINGS</p><h2 id="settings-title">儲存 API Key、偵測模型</h2><p>API Key 只保存在目前瀏覽器；請在自己信任的裝置上使用。</p></div><span class="slide__badge">設定</span></header>
+        <div class="slide__body">
+          <div>
+            <ol class="instructions">
+              <li>在 Provider 分頁選擇服務；CGU 使用者可從 <strong>air.cgu.edu.tw</strong> 取得 Key。</li>
+              <li>貼上 API Key，按<strong>「儲存 API Key」</strong>；已有 Key 時輸入新值即可取代。</li>
+              <li>按<strong>「偵測模型」</strong>更新可用清單，選定要使用的模型。</li>
+              <li>可按<strong>「測試連線」</strong>確認模型能正常回覆，再按「完成」。</li>
+            </ol>
+            <div class="tip"><strong>安全提醒：</strong>金鑰不會寫入教材、題庫、匯出檔或 GitHub；離開共用電腦前，請使用「清除 API Key」。</div>
+          </div>
+          <figure class="figure"><img src="images/02-ai-settings.png" alt="連接你的 AI 設定視窗，顯示 CGU LLM Gateway、API Key 與偵測模型" /><figcaption><strong>圖 02｜AI 設定視窗。</strong>從 Provider、Key、模型到測試連線，都在同一個設定面板完成。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-page="04 / 07" aria-labelledby="materials-title">
+        <header class="slide__header"><div><p class="eyebrow">STEP 02 · LOCAL PARSING</p><h2 id="materials-title">加入命題教材</h2><p>教材先在瀏覽器本機解析，確認文字內容後才會交給 AI 命題。</p></div><span class="slide__badge">教材</span></header>
+        <div class="slide__body">
+          <div>
+            <ol class="instructions">
+              <li>拖放或選擇 <strong>PDF、TXT、MD</strong> 教材；PDF 上限為 100 MB。</li>
+              <li>也可以按<strong>「載入 AI 概念入門範例」</strong>快速體驗流程。</li>
+              <li>若不想上傳檔案，可在文字框貼上講義，再按<strong>「加入文字教材」</strong>。</li>
+              <li>需要時可另行匯入考古題，選擇「變換題型」或「避開考古題」。</li>
+            </ol>
+            <div class="tip"><strong>檢查重點：</strong>教材清單會顯示檔名、字數與片段；展開項目即可先閱讀擷取文字。</div>
+          </div>
+          <figure class="figure"><img src="images/03-add-materials.png" alt="加入命題教材畫面，顯示 AI 概念入門範例與教材清單" /><figcaption><strong>圖 03｜教材解析頁。</strong>右側清單可檢查教材片段，左側提供上傳、範例與貼上文字三種入口。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-page="05 / 07" aria-labelledby="blueprint-title">
+        <header class="slide__header"><div><p class="eyebrow">STEP 03 · QUESTION BLUEPRINT</p><h2 id="blueprint-title">設定題型與難度</h2><p>先定義題庫藍圖，AI 只會產生候選題，最後仍由教師審核。</p></div><span class="slide__badge">出題</span></header>
+        <div class="slide__body">
+          <div>
+            <ol class="instructions">
+              <li>在左側輸入單選、複選、是非與簡答題的題數。</li>
+              <li>設定出題語言、整體難度與每題預設配分。</li>
+              <li>可在「額外命題要求」輸入限制，也可點選快速範例。</li>
+              <li>確認右側總題數後，按<strong>「產生候選題」</strong>。</li>
+            </ol>
+            <div class="tip"><strong>建議：</strong>先用少量題目測試教材與模型，再逐步增加題數，方便快速檢查結果。</div>
+          </div>
+          <figure class="figure"><img src="images/04-question-blueprint.png" alt="設定題型與難度畫面，顯示題數、語言、難度與產生候選題按鈕" /><figcaption><strong>圖 04｜出題設定頁。</strong>右側摘要會同步顯示題數、教材、AI 與模型，送出前可再次確認。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-page="06 / 07" aria-labelledby="review-title">
+        <header class="slide__header"><div><p class="eyebrow">STEP 04 · HUMAN REVIEW</p><h2 id="review-title">逐題審核候選題庫</h2><p>接受、修改或退回每一題；來源引文用來回查教材，最終判斷仍由教師完成。</p></div><span class="slide__badge">把關</span></header>
+        <div class="slide__body">
+          <div>
+            <ol class="instructions">
+              <li>展開題目後檢查題幹、選項、答案、解析與教材引文。</li>
+              <li>可直接編輯內容、調整題型／難度／配分，或使用上下移動與複製。</li>
+              <li>按<strong>「接受」</strong>保留題目，按<strong>「退回」</strong>移除不適合的候選題。</li>
+              <li>若看到格式驗證錯誤，請點選<strong>「清除重新出題」</strong>後再試。</li>
+            </ol>
+            <div class="tip"><strong>批次操作：</strong>上方可篩選待審核／已接受／已退回，也可一次接受本頁待審題。</div>
+          </div>
+          <figure class="figure"><img src="images/05-review-question-bank.png" alt="審核候選題庫畫面，顯示可編輯題目、答案解析與接受退回按鈕" /><figcaption><strong>圖 05｜教師審核頁。</strong>每題都保留修訂資訊與教材來源，方便逐題確認後再進入匯出。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-page="07 / 07" aria-labelledby="export-title">
+        <header class="slide__header"><div><p class="eyebrow">STEP 05 · EXPORT</p><h2 id="export-title">匯出、列印與交換</h2><p>只匯出已接受的題目，依需求選擇 Word、純文字或題庫備份格式。</p></div><span class="slide__badge">完成</span></header>
+        <div class="slide__body slide__body--wide">
+          <figure class="figure"><img src="images/06-export-and-print.png" alt="匯出與列印畫面，顯示試卷資訊、預覽與 DOCX、TXT、JSON 選項" /><figcaption><strong>圖 06｜匯出與列印頁。</strong>設定試卷標題、作答時間與亂數種子後，可下載一般考卷、A／B 卷 DOCX、TXT 或 JSON。</figcaption></figure>
+          <div class="checklist">
+            <div><b>一般考卷 DOCX</b>單一題本與解答，可在 Word 編輯。</div>
+            <div><b>A／B 卷 DOCX</b>兩份異序題本與分卷解答。</div>
+            <div><b>純文字 TXT</b>方便複製、交換或貼到其他系統。</div>
+            <div><b>題庫 JSON</b>備份題目、批次與修訂資訊，不含 API Key。</div>
+          </div>
+          <p class="footer-note"><strong>列印提示：</strong>本手冊本身可用上方「列印／另存 PDF」輸出 A4；QuizGenerator 產生的 DOCX 則可在 Word 中調整版面後列印。</p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const slides = [...document.querySelectorAll('.slide')];
+        const counter = document.querySelector('#counter');
+        let current = 0;
+        const go = (index) => {
+          current = Math.max(0, Math.min(slides.length - 1, index));
+          slides[current].scrollIntoView({ behavior: 'smooth', block: 'start' });
+          counter.textContent = `${current + 1} / ${slides.length}`;
+        };
+        document.querySelector('#previous').addEventListener('click', () => go(current - 1));
+        document.querySelector('#next').addEventListener('click', () => go(current + 1));
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'PageUp') go(current - 1);
+          if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') go(current + 1);
+        });
+        const observer = new IntersectionObserver((entries) => {
+          const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+          if (!visible) return;
+          current = slides.indexOf(visible.target);
+          counter.textContent = `${current + 1} / ${slides.length}`;
+        }, { threshold: [0.55] });
+        slides.forEach(slide => observer.observe(slide));
+      })();
+    </script>
+  </body>
+</html>

@@ -119,3 +119,13 @@ test('imports a past exam and lets the teacher choose how to use it', async ({ p
   await strategies.getByRole('radio', { name: /避開考古題/ }).click();
   await expect(strategies.getByRole('radio', { name: /避開考古題/ })).toHaveAttribute('aria-checked', 'true');
 });
+
+test('opens the printable user manual from the header', async ({ page }) => {
+  await page.goto('/');
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('link', { name: '開啟使用手冊' }).click();
+  const manual = await popupPromise;
+  await expect(manual).toHaveTitle('QuizGenerator 使用手冊');
+  await expect(manual.locator('.slide')).toHaveCount(7);
+  await expect(manual.locator('.slide img')).toHaveCount(6);
+});
