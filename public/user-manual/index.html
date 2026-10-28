@@ -63,9 +63,10 @@
       }
       .slide {
         position: relative;
-        display: grid;
-        grid-template-rows: minmax(0, 1fr) auto;
+        display: flex;
+        flex-direction: column;
         width: min(100%, 297mm);
+        height: 210mm;
         min-height: 210mm;
         padding: 12mm 14mm 10mm;
         overflow: hidden;
@@ -170,8 +171,8 @@
         color: #6a5548;
       }
       .figure {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
         align-items: center;
         justify-content: center;
         height: 100%;
@@ -204,20 +205,9 @@
         @page { size: A4 landscape; margin: 0; }
         html, body { background: white; }
         .toolbar { display: none; }
-        .deck { display: block; padding: 0; }
-        .slide {
-          width: 297mm;
-          height: 210mm;
-          min-height: 0;
-          margin: 0;
-          border: 0;
-          border-radius: 0;
-          box-shadow: none;
-          break-after: page;
-          page-break-after: always;
-        }
+        .deck { gap: 0; padding: 0; }
+        .slide { break-after: page; page-break-after: always; }
         .slide:last-child { break-after: auto; page-break-after: auto; }
-        .figure img { width: 100%; height: 100%; max-height: none; }
         a { text-decoration: none; }
       }
     </style>
