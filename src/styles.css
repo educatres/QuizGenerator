@@ -36,6 +36,10 @@
 @media(max-width:650px){.past-exam-panel{padding:20px 18px}.past-exam-heading{align-items:stretch;flex-direction:column}.past-exam-upload{align-self:flex-start}.past-exam-strategy{grid-template-columns:1fr}.past-exam-files>span{width:100%}.past-exam-files b{max-width:none;flex:1}.cgu-key-notice{align-items:flex-start}.instruction-examples button{width:100%;border-radius:7px}}
 
 /* Deep tea accent palette */
+.connection-panel-cgu{background-position:center;background-repeat:no-repeat;background-size:cover}
+.connection-panel-cgu .page-heading{background:linear-gradient(115deg,rgba(255,254,250,.92),rgba(255,243,215,.8))}
+.connection-panel-cgu .connection-overview{background:linear-gradient(180deg,rgba(255,250,244,.78),rgba(255,250,244,.62))}
+.connection-panel-cgu .panel-actions{background:rgba(255,250,240,.9)}
 input:focus,select:focus,textarea:focus{border-color:#9b7359;box-shadow:0 0 0 3px #7b513420}
 .brand-symbol{box-shadow:0 4px 12px #5b3a292b}.brand h1{color:#402d22}.brand h1 span,.brand p,.ai-settings-toggle small{color:#746256}.header-status{color:#705b4d}.header-status button{color:#7b6758}.header-status .ai-settings-toggle{color:#6f5543}.header-status .ai-settings-toggle.ready{border-color:#c8aa91;background:#f7eee6;color:#68422f}
 .stepper button{color:#817166}.stepper .available{color:#6f5848}.stepper .active i{box-shadow:0 3px 8px #5b3a2933}.page-heading p{color:#7a5943}.page-heading h2{color:#4a3225}.panel-actions{color:#756359}.primary:hover,.generate-button:hover{background:#462b1f}.field-label span{color:#756052}.stack-field>span{color:#5d4435}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import cguCampusLineArtUrl from './assets/cgu-campus-line-art.png';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp,
   CircleAlert, Copy, Download, Eye, EyeOff, FileCheck2, FilePlus2, FileText, KeyRound, LoaderCircle,
@@ -87,6 +88,9 @@ export function App() {
   }, [provider, selectedModels]);
 
   const adapter = adapters[provider];
+  const connectionPanelStyle = provider === 'cgu'
+    ? { backgroundImage: `linear-gradient(180deg, rgba(255, 250, 244, 0.88), rgba(255, 250, 244, 0.68)), url("${cguCampusLineArtUrl}")` }
+    : undefined;
   const allChunks = useMemo(() => materials.flatMap(material => material.chunks), [materials]);
   const pastExamChunks = useMemo(() => pastExams.flatMap(material => material.chunks), [pastExams]);
   const reviewGenerations = useMemo(() => groupQuestionsByGeneration(questions), [questions]);
@@ -254,7 +258,7 @@ export function App() {
     </header>
     <nav className="stepper" aria-label="製作流程">{steps.map(([title, caption], index) => <button key={title} className={`${index === step ? 'active' : ''} ${canGo[index] ? 'available' : ''}`} onClick={() => canGo[index] && setStep(index)} disabled={!canGo[index]}><i>{index < step || (index === 0 && connected[provider]) ? <Check size={14} /> : index + 1}</i><span><strong>{title}</strong><small>{caption}</small></span></button>)}</nav>
     <main className="workspace">
-      {step === 0 && <section className="panel connection-panel"><PageHeading eyebrow="STEP 01 · BRING YOUR OWN KEY" title="連接你的 AI" description="需要設定或更換 AI 時才打開設定面板；完成後可直接沿用這個瀏覽器保存的設定。" />
+      {step === 0 && <section className={`panel connection-panel ${provider === 'cgu' ? 'connection-panel-cgu' : ''}`} style={connectionPanelStyle}><PageHeading eyebrow="STEP 01 · BRING YOUR OWN KEY" title="連接你的 AI" description="需要設定或更換 AI 時才打開設定面板；完成後可直接沿用這個瀏覽器保存的設定。" />
         <div className="connection-overview"><div className={`connection-orb ${hasSessionKey(provider) && selectedModels[provider] ? 'ready' : ''}`}>{hasSessionKey(provider) && selectedModels[provider] ? <Check size={28} /> : <KeyRound size={28} />}</div><p>{hasSessionKey(provider) && selectedModels[provider] ? 'AI 已準備完成' : '尚未完成 AI 設定'}</p><h3>{hasSessionKey(provider) && selectedModels[provider] ? adapter.name : '使用你自己的 API Key'}</h3><span>{hasSessionKey(provider) && selectedModels[provider] ? selectedModels[provider] : 'API Key 會保存在這個瀏覽器，且可隨時一鍵清除。'}</span><button className="primary settings-launch" onClick={() => setApiSettingsOpen(true)}><KeyRound size={16} />{hasSessionKey(provider) ? '查看或更改 AI 設定' : '設定 API Key 與模型'}</button><small><ShieldCheck size={13} />金鑰不會寫入題庫、匯出檔或 GitHub</small></div>
         <footer className="panel-actions"><span>只有在產生題目與測試連線時，瀏覽器才會呼叫所選 AI。</span><span className="spacer" /><button className="primary" onClick={() => setStep(1)}>下一步：加入教材<ArrowRight size={16} /></button></footer>
       </section>}
