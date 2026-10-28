@@ -58,36 +58,37 @@
       .deck {
         display: grid;
         justify-items: center;
-        gap: 26px;
-        padding: 28px 14px 52px;
+        gap: 0;
+        width: min(100%, 1120px);
+        margin: 0 auto;
+        padding: 18px 20px 52px;
       }
       .slide {
         position: relative;
         display: flex;
         flex-direction: column;
-        width: min(100%, 297mm);
-        height: 210mm;
-        min-height: 210mm;
-        padding: 12mm 14mm 10mm;
-        overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--paper);
-        box-shadow: 0 18px 44px #50382122;
+        width: 100%;
+        min-height: 0;
+        padding: 48px 0 52px;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
         scroll-snap-align: start;
       }
       .slide::after {
-        position: absolute;
-        right: 16mm;
-        bottom: 8mm;
+        display: block;
+        margin-top: 24px;
         color: #a89586;
         content: attr(data-page);
         font-size: 10pt;
         letter-spacing: .12em;
+        text-align: right;
       }
+      .slide:last-child { border-bottom: 0; }
       .slide--cover {
         justify-content: center;
-        background: linear-gradient(145deg, #fffdf8 0%, #f4e5d4 100%);
+        min-height: 0;
+        padding-top: 72px;
+        padding-bottom: 72px;
       }
       .cover__mark {
         display: grid;
@@ -145,8 +146,8 @@
         font-size: 10pt;
         letter-spacing: .08em;
       }
-      .slide__body { display: grid; grid-template-columns: 1fr 3fr; gap: 14px; flex: 1; min-height: 0; padding-top: 16px; }
-      .slide__body--wide { display: grid; grid-template-columns: 1fr 3fr; grid-template-rows: 1fr auto; align-items: center; column-gap: 14px; }
+      .slide__body { display: grid; grid-template-columns: 1fr 3fr; gap: 24px; align-items: start; padding-top: 20px; }
+      .slide__body--wide { display: grid; grid-template-columns: 1fr 3fr; grid-template-rows: auto auto; align-items: start; column-gap: 24px; }
       .slide__body--wide .figure { grid-column: 2; grid-row: 1 / span 2; }
       .slide__body--wide .checklist { grid-column: 1; grid-row: 1; }
       .slide__body--wide .footer-note { grid-column: 1; grid-row: 2; margin-top: 0; }
@@ -163,18 +164,12 @@
       }
       .figure {
         display: grid;
-        grid-template-rows: minmax(0, 1fr) auto;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        min-height: 0;
+        grid-template-rows: auto auto;
+        align-items: start;
         margin: 0;
-        padding: 10px;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        background: #f8f1e8;
+        padding: 0;
       }
-      .figure img { display: block; width: 100%; height: 100%; max-width: 100%; max-height: none; object-fit: contain; border: 1px solid #e3d7ca; background: white; }
+      .figure img { display: block; width: 100%; height: auto; max-width: 100%; object-fit: contain; border: 1px solid #e3d7ca; background: white; }
       .figure figcaption { width: 100%; margin-top: 9px; color: var(--muted); font-size: 10.5pt; line-height: 1.55; }
       .figure figcaption strong { color: var(--accent); }
       .checklist { display: grid; grid-template-columns: 1fr; gap: 9px; margin-top: 12px; }
@@ -184,11 +179,10 @@
 
       @media (max-width: 760px) {
         .toolbar { align-items: flex-start; flex-direction: column; }
-        .slide { min-height: 0; padding: 28px 22px 48px; }
+        .deck { padding: 0 16px 36px; }
+        .slide { padding: 36px 0 42px; }
         .slide__body { grid-template-columns: 1fr; }
         .slide__body--wide { display: flex; flex-direction: column; }
-        .figure { height: auto; }
-        .figure img { width: 100%; height: auto; max-height: none; }
         .cover__steps { grid-template-columns: 1fr 1fr; }
       }
 
@@ -196,9 +190,9 @@
         @page { size: A4 landscape; margin: 0; }
         html, body { background: white; }
         .toolbar { display: none; }
-        .deck { gap: 0; padding: 0; }
-        .slide { break-after: page; page-break-after: always; }
-        .slide:last-child { break-after: auto; page-break-after: auto; }
+        .deck { width: 100%; gap: 0; padding: 0 12mm; }
+        .slide { break-after: auto; page-break-after: auto; padding: 12mm 0 14mm; }
+        .slide::after { margin-top: 8mm; }
         a { text-decoration: none; }
       }
     </style>
@@ -219,7 +213,7 @@
         <div class="cover__mark" aria-hidden="true">✎</div>
         <p class="eyebrow">QuizGenerator · 操作手冊</p>
         <h1 id="cover-title">從教材到試卷，完成一套可審核的 AI 命題流程</h1>
-        <p class="cover__lead">本手冊以實際操作畫面說明五個步驟，每一頁都是獨立的 A4 投影片版面。</p>
+        <p class="cover__lead">本手冊以實際操作畫面說明五個步驟，各章節以分隔線區分，截圖會依可用寬度完整呈現。</p>
         <div class="cover__steps" aria-label="五個操作步驟">
           <span>01<br />連接 AI</span><span>02<br />加入教材</span><span>03<br />設定題型</span><span>04<br />審核題庫</span><span>05<br />匯出試卷</span>
         </div>
