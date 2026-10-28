@@ -105,7 +105,7 @@ async function fetchJson(provider: ProviderId, path: string, init: RequestInit =
 
 function validateQuestions(raw: string): GeneratedQuestion[] {
   const parsed = generatedResponseSchema.safeParse(extractJson(raw));
-  if (!parsed.success) throw new Error(`題目格式驗證失敗：${parsed.error.issues[0]?.message ?? '未知格式錯誤'}`);
+  if (!parsed.success) throw new Error(`題目格式驗證失敗：${parsed.error.issues[0]?.message ?? '未知格式錯誤'}，請點選清除重新出題`);
   return parsed.data.questions;
 }
 
