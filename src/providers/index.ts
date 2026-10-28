@@ -103,10 +103,36 @@ async function fetchJson(provider: ProviderId, path: string, init: RequestInit =
   try { return await response.json(); } catch { throw new Error('供應商沒有回傳有效 JSON。'); }
 }
 
+function validationPath(path: (string | number)[]) {
+  return path.reduce((result, part) => {
+    if (typeof part === 'number') return `${result}[${part}]`;
+    return result ? `${result}.${String(part)}` : String(part);
+  }, '');
+}
+
 function validateQuestions(raw: string): GeneratedQuestion[] {
-  const parsed = generatedResponseSchema.safeParse(extractJson(raw));
-  if (!parsed.success) throw new Error(`題目格式驗證失敗：${parsed.error.issues[0]?.message ?? '未知格式錯誤'}，請點選清除重新出題`);
+  let payload: unknown;
+  try {
+    payload = extractJson(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '模型回傳的 JSON 無法解析';
+    throw new Error(`題目格式驗證失敗：${message}`);
+  }
+  const parsed = generatedResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const path = issue?.path?.length ? `（欄位 ${validationPath(issue.path as (string | number)[])}）` : '';
+    throw new Error(`題目格式驗證失敗：${issue?.message ?? '未知格式錯誤'}${path}`);
+  }
   return parsed.data.questions;
+}
+
+function isRetryableFormatError(error: unknown): error is Error {
+  return error instanceof Error && error.message.startsWith('題目格式驗證失敗：');
+}
+
+function repairPrompt(prompt: string, error: Error) {
+  return `${prompt}\n\n上一次回覆未通過格式驗證：${error.message}\n請修正後重新輸出完整 JSON。所有 stem、explanation、referenceAnswer、rubric、sources.documentId、sources.chunkId、sources.quote 都必須是字串；不要把字串包在陣列中。options 必須是 [{"id":"A","text":"..."}]，correctOptionIds 才是字串陣列。不要輸出 Markdown 或任何 JSON 以外的文字。`;
 }
 
 function createAdapter(id: ProviderId): ProviderAdapter {
@@ -136,28 +162,40 @@ function createAdapter(id: ProviderId): ProviderAdapter {
       }
     },
     async generateQuestions(request: GenerateRequest) {
-      const prompt = buildQuestionPrompt(request.settings, selectGenerationContext(request.chunks), request.pastExamChunks?.length ? {
+      const initialPrompt = buildQuestionPrompt(request.settings, selectGenerationContext(request.chunks), request.pastExamChunks?.length ? {
         context: selectGenerationContext(request.pastExamChunks),
         strategy: request.pastExamStrategy ?? 'transform',
       } : undefined);
-      let text = '';
-      try {
-        if (id === 'gemini') {
-          const data = await fetchJson(id, `/models/${encodeURIComponent(request.model)}:generateContent`, { method: 'POST', signal: request.signal, body: JSON.stringify({ systemInstruction: { parts: [{ text: systemGuard }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.3 } }) });
-          text = (data.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text || '').join('');
-        } else {
-          const data = await fetchJson(id, '/chat/completions', { method: 'POST', signal: request.signal, body: JSON.stringify({
-            model: request.model,
-            messages: [{ role: 'system', content: systemGuard }, { role: 'user', content: prompt }],
-            // Newer CGU Luna models only accept their default temperature (1).
-            // Omitting the field is more compatible than explicitly sending 1.
-            ...(id === 'cgu' ? {} : { temperature: 0.3 }),
-            response_format: { type: 'json_object' },
-          }) });
-          text = data.choices?.[0]?.message?.content || '';
+      let prompt = initialPrompt;
+      let lastFormatError: Error | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        let text = '';
+        try {
+          if (id === 'gemini') {
+            const data = await fetchJson(id, `/models/${encodeURIComponent(request.model)}:generateContent`, { method: 'POST', signal: request.signal, body: JSON.stringify({ systemInstruction: { parts: [{ text: systemGuard }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.3 } }) });
+            text = (data.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text || '').join('');
+          } else {
+            const data = await fetchJson(id, '/chat/completions', { method: 'POST', signal: request.signal, body: JSON.stringify({
+              model: request.model,
+              messages: [{ role: 'system', content: systemGuard }, { role: 'user', content: prompt }],
+              // Newer CGU Luna models only accept their default temperature (1).
+              // Omitting the field is more compatible than explicitly sending 1.
+              ...(id === 'cgu' ? {} : { temperature: 0.3 }),
+              response_format: { type: 'json_object' },
+            }) });
+            text = data.choices?.[0]?.message?.content || '';
+          }
+        } catch (error) { throw normalizeError(error, id); }
+
+        try {
+          return validateQuestions(text);
+        } catch (error) {
+          if (!isRetryableFormatError(error) || attempt === 1) throw error;
+          lastFormatError = error;
+          prompt = repairPrompt(initialPrompt, error);
         }
-      } catch (error) { throw normalizeError(error, id); }
-      return validateQuestions(text);
+      }
+      throw lastFormatError ?? new Error('題目格式驗證失敗：模型沒有回傳可用題目');
     },
   };
 }
