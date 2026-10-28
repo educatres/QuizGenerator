@@ -126,15 +126,6 @@
         font-size: 11pt;
         text-align: center;
       }
-      .cover__note {
-        max-width: 620px;
-        margin-top: 36px;
-        padding: 13px 16px;
-        border: 1px solid #e3cdb9;
-        border-radius: 8px;
-        background: #fffaf0b8;
-        color: #6d5749;
-      }
       .slide__header {
         display: flex;
         align-items: flex-start;
@@ -217,7 +208,6 @@
       <strong>QuizGenerator · 使用手冊</strong>
       <div class="toolbar__actions">
         <a href="../">回到 QuizGenerator</a>
-        <button type="button" onclick="window.print()">列印／另存 PDF</button>
         <button type="button" id="previous" aria-label="上一頁">←</button>
         <span id="counter" aria-live="polite" style="align-self:center;min-width:54px;text-align:center">1 / 7</span>
         <button type="button" id="next" aria-label="下一頁">→</button>
@@ -229,11 +219,10 @@
         <div class="cover__mark" aria-hidden="true">✎</div>
         <p class="eyebrow">QuizGenerator · 操作手冊</p>
         <h1 id="cover-title">從教材到試卷，完成一套可審核的 AI 命題流程</h1>
-        <p class="cover__lead">本手冊以實際操作畫面說明五個步驟。每一頁都是獨立的 A4 投影片版面，可直接列印或另存為 PDF。</p>
+        <p class="cover__lead">本手冊以實際操作畫面說明五個步驟，每一頁都是獨立的 A4 投影片版面。</p>
         <div class="cover__steps" aria-label="五個操作步驟">
           <span>01<br />連接 AI</span><span>02<br />加入教材</span><span>03<br />設定題型</span><span>04<br />審核題庫</span><span>05<br />匯出試卷</span>
         </div>
-        <p class="cover__note"><strong>閱讀方式：</strong>畫面中的按鈕名稱與手冊文字一致；遇到錯誤時，先依頁面提示清除題目，再重新產生。</p>
       </section>
 
       <section class="slide" data-page="02 / 07" aria-labelledby="connect-title">
@@ -325,7 +314,7 @@
             <div><b>純文字 TXT</b>方便複製、交換或貼到其他系統。</div>
             <div><b>題庫 JSON</b>備份題目、批次與修訂資訊，不含 API Key。</div>
           </div>
-          <p class="footer-note"><strong>列印提示：</strong>本手冊本身可用上方「列印／另存 PDF」輸出 A4；QuizGenerator 產生的 DOCX 則可在 Word 中調整版面後列印。</p>
+          <p class="footer-note">QuizGenerator 產生的 DOCX 可在 Word 中調整版面後列印。</p>
         </div>
       </section>
     </main>
