@@ -253,7 +253,7 @@ export function App() {
 
   return <div className="app-shell">
     <header className="app-header">
-      <div className="brand"><div className="brand-symbol"><PencilLine size={24} /></div><div><h1>QuizGenerator <span>1.0</span></h1><p>從教材到試卷，老師的命題工作台</p></div></div>
+      <div className="brand"><div className="brand-symbol"><PencilLine size={24} /></div><div><h1>QuizGenerator</h1><p>從教材到試卷，老師的命題工作台</p></div></div>
       <div className="header-status"><button className={`ai-settings-toggle ${hasSessionKey(provider) && selectedModels[provider] ? 'ready' : ''}`} onClick={() => setApiSettingsOpen(true)}><KeyRound size={15} /><span><strong>AI 設定</strong><small>{hasSessionKey(provider) && selectedModels[provider] ? `${adapter.name} · ${selectedModels[provider]}` : '設定 API Key 與模型'}</small></span></button><button onClick={() => void clearAll()} title="清除本機資料"><Trash2 size={15} /></button></div>
     </header>
     <nav className="stepper" aria-label="製作流程">{steps.map(([title, caption], index) => <button key={title} className={`${index === step ? 'active' : ''} ${canGo[index] ? 'available' : ''}`} onClick={() => canGo[index] && setStep(index)} disabled={!canGo[index]}><i>{index < step || (index === 0 && connected[provider]) ? <Check size={14} /> : index + 1}</i><span><strong>{title}</strong><small>{caption}</small></span></button>)}</nav>
