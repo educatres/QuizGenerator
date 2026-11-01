@@ -15,6 +15,7 @@ import { clearSnapshot, loadSnapshot, saveSnapshot } from './services/localDb';
 import { downloadBlob, downloadText } from './services/download';
 import type { ExamDocumentMode } from './services/exportDocx';
 import { reconcileQuestionSources } from './services/sourceValidation';
+import { inspectMaterial, promptSafetyWarning, scanChunks, scanPromptInjection } from './services/promptSafety';
 
 const steps = [
   ['AI 設定', '連接模型'], ['加入教材', '本機解析'], ['出題設定', '建立題目'], ['審核題庫', '教師把關'], ['匯出試卷', '列印與測驗'],
@@ -75,7 +76,7 @@ export function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const pastExamInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { void loadSnapshot().then(snapshot => { if (snapshot) { setMaterials(snapshot.materials); setPastExams(snapshot.pastExams ?? []); setPastExamStrategy(snapshot.pastExamStrategy ?? 'transform'); setQuestions(snapshot.questions); setExam(snapshot.exam); } setHydrated(true); }); }, []);
+  useEffect(() => { void loadSnapshot().then(snapshot => { if (snapshot) { setMaterials(snapshot.materials.map(inspectMaterial)); setPastExams((snapshot.pastExams ?? []).map(inspectMaterial)); setPastExamStrategy(snapshot.pastExamStrategy ?? 'transform'); setQuestions(snapshot.questions); setExam(snapshot.exam); } setHydrated(true); }); }, []);
   useEffect(() => {
     if (!hydrated) return;
     const timer = window.setTimeout(() => void saveSnapshot({ materials, pastExams, pastExamStrategy, questions, exam }), 450);
@@ -142,11 +143,11 @@ export function App() {
       const imported: MaterialDocument[] = [];
       for (const file of list) {
         const extension = file.name.split('.').pop()?.toLowerCase();
-        if (extension === 'pdf') imported.push(await extractPdf(file, (current, total) => setNotice({ kind: 'info', text: `正在解析 ${file.name}：${current} / ${total} 頁` })));
-        else if (extension === 'txt' || extension === 'md' || extension === 'markdown') imported.push(await extractTextFile(file));
+        if (extension === 'pdf') imported.push(inspectMaterial(await extractPdf(file, (current, total) => setNotice({ kind: 'info', text: `正在解析 ${file.name}：${current} / ${total} 頁` }))));
+        else if (extension === 'txt' || extension === 'md' || extension === 'markdown') imported.push(inspectMaterial(await extractTextFile(file)));
         else throw new Error(`${file.name} 的格式不受支援。請使用 PDF、TXT 或 Markdown。`);
       }
-      setMaterials(state => [...state, ...imported]); setExpandedMaterial(imported[0]?.id); announce(`已在本機解析 ${imported.length} 份教材。`);
+      setMaterials(state => [...state, ...imported]); setExpandedMaterial(imported[0]?.id); const findings = imported.flatMap(material => scanChunks(material.chunks)); announce(findings.length ? promptSafetyWarning(findings) : '教材已加入。', findings.length ? 'error' : 'success');
     } catch (error) { announce((error as Error).message, 'error'); }
     finally { setBusy(''); if (fileInput.current) fileInput.current.value = ''; }
   }
@@ -157,17 +158,18 @@ export function App() {
       const imported: MaterialDocument[] = [];
       for (const file of list) {
         const extension = file.name.split('.').pop()?.toLowerCase();
-        if (extension === 'pdf') imported.push(await extractPdf(file, (current, total) => setNotice({ kind: 'info', text: `正在解析考古題 ${file.name}：${current} / ${total} 頁` })));
-        else if (extension === 'txt' || extension === 'md' || extension === 'markdown') imported.push(await extractTextFile(file));
+        if (extension === 'pdf') imported.push(inspectMaterial(await extractPdf(file, (current, total) => setNotice({ kind: 'info', text: `正在解析考古題 ${file.name}：${current} / ${total} 頁` }))));
+        else if (extension === 'txt' || extension === 'md' || extension === 'markdown') imported.push(inspectMaterial(await extractTextFile(file)));
         else throw new Error(`${file.name} 的格式不受支援。考古題請使用 PDF、TXT 或 Markdown。`);
       }
-      setPastExams(state => [...state, ...imported]); announce(`已在本機解析 ${imported.length} 份考古題。`);
+      setPastExams(state => [...state, ...imported]); const findings = imported.flatMap(material => scanChunks(material.chunks)); announce(findings.length ? promptSafetyWarning(findings) : '考古題已加入。', findings.length ? 'error' : 'success');
     } catch (error) { announce((error as Error).message, 'error'); }
     finally { setBusy(''); if (pastExamInput.current) pastExamInput.current.value = ''; }
   }
   function addPasted() {
     if (pasteText.trim().length < 20) return announce('請貼上至少 20 個字的教材內容。', 'error');
-    const material = fromPastedText(pasteText); setMaterials(state => [...state, material]); setPasteText(''); setExpandedMaterial(material.id); announce('已加入貼上文字。');
+    const material = inspectMaterial(fromPastedText(pasteText)); setMaterials(state => [...state, material]); setPasteText(''); setExpandedMaterial(material.id);
+    const findings = scanChunks(material.chunks); announce(findings.length ? promptSafetyWarning(findings) : '文字教材已加入。', findings.length ? 'error' : 'success');
   }
   async function addExampleMaterial() {
     setBusy('example');
@@ -177,7 +179,7 @@ export function App() {
       const response = await fetch(`${import.meta.env.BASE_URL}examples/ai-concepts.txt`);
       if (!response.ok) throw new Error(`無法讀取範例資料（HTTP ${response.status}）。`);
       const text = await response.text();
-      const material = { ...fromPastedText(text), name: 'AI_概念入門_範例.txt', kind: 'txt' as const };
+      const material = inspectMaterial({ ...fromPastedText(text), name: 'AI_概念入門_範例.txt', kind: 'txt' as const });
       setMaterials(state => [...state, material]);
       setExpandedMaterial(material.id); announce('已載入「AI 概念入門」範例，可直接前往出題設定。');
     } catch (error) { announce((error as Error).message, 'error'); }
@@ -186,6 +188,11 @@ export function App() {
 
   async function generate() {
     if (!materials.length) return announce('請先加入教材。', 'error');
+    const materialFindings = scanChunks(materials.flatMap(material => material.chunks));
+    const pastExamFindings = scanChunks(pastExams.flatMap(material => material.chunks));
+    const instructionFindings = scanPromptInjection(settings.instructions);
+    const safetyFindings = [...new Map([...materialFindings, ...pastExamFindings, ...instructionFindings].map(finding => [finding.category, finding])).values()];
+    if (safetyFindings.length) return announce(promptSafetyWarning(safetyFindings), 'error');
     if (!hasSessionKey(provider)) { setApiSettingsOpen(true); setStep(0); return announce('請先設定 API Key；設定面板已為你開啟。', 'error'); }
     if (!selectedModels[provider]) { setApiSettingsOpen(true); setStep(0); return announce('請先偵測並選擇模型。', 'error'); }
     if (totalRequested(settings) < 1 || totalRequested(settings) > 50) return announce('一次請產生 1–50 題。', 'error');
@@ -268,7 +275,7 @@ export function App() {
           <button className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void importFiles(e.dataTransfer.files); }}><Upload size={28} /><strong>{busy === 'import' ? '正在本機解析…' : '拖放或選擇教材檔案'}</strong><span>PDF · TXT · MD　PDF 上限 100 MB</span></button><input ref={fileInput} hidden type="file" accept=".pdf,.txt,.md,.markdown" multiple onChange={e => e.target.files && void importFiles(e.target.files)} />
           <button className="example-material-button" disabled={!!busy} onClick={() => void addExampleMaterial()}>{busy === 'example' ? <LoaderCircle className="spin" size={17} /> : <BookOpen size={17} />}<span><strong>載入 AI 概念入門範例</strong><small>純文字教材，可直接用來測試產題流程</small></span><ArrowRight size={15} /></button>
           <div className="or"><span>或貼上文字</span></div><textarea className="paste-area" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="貼上講義、文章或課程內容…" rows={7} /><button className="secondary add-paste" onClick={addPasted}><Plus size={15} />加入文字教材</button>
-        </div><div className="material-list"><div className="list-heading"><span>教材清單</span><b>{materials.length} 份 · {allChunks.length} 個片段</b></div>{!materials.length ? <Empty icon={<FilePlus2 />} title="尚未加入教材" text="解析後可檢查擷取文字與頁碼，再交給 AI 出題。" /> : materials.map(material => <article key={material.id} className="material-card"><button className="material-summary" onClick={() => setExpandedMaterial(expandedMaterial === material.id ? undefined : material.id)}><FileText size={20} /><span><strong>{material.name}</strong><small>{material.kind.toUpperCase()} · {material.pageCount ? `${material.pageCount} 頁 · ` : ''}{material.characterCount.toLocaleString()} 字 · {formatBytes(material.size)}</small></span>{expandedMaterial === material.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>{material.warning && <p className="warning"><CircleAlert size={14} />{material.warning}</p>}{expandedMaterial === material.id && <div className="material-preview">{material.chunks.slice(0, 3).map(chunk => <div key={chunk.id}><b>{chunk.pageNumber ? `第 ${chunk.pageNumber} 頁` : chunk.id}</b><p>{chunk.text.slice(0, 550)}{chunk.text.length > 550 ? '…' : ''}</p></div>)}{material.chunks.length > 3 && <small>另有 {material.chunks.length - 3} 個片段</small>}</div>}<button className="remove" onClick={() => setMaterials(state => state.filter(d => d.id !== material.id))} aria-label={`移除 ${material.name}`}><X size={15} /></button></article>)}</div></div>
+        </div><div className="material-list"><div className="list-heading"><span>教材清單</span><b>{materials.length} 份 · {allChunks.length} 個片段</b></div>{!materials.length ? <Empty icon={<FilePlus2 />} title="尚未加入教材" text="解析後可檢查擷取文字與頁碼，再交給 AI 出題。" /> : materials.map(material => <article key={material.id} className="material-card"><button className="material-summary" onClick={() => setExpandedMaterial(expandedMaterial === material.id ? undefined : material.id)}><FileText size={20} /><span><strong>{material.name}</strong><small>{material.kind.toUpperCase()} · {material.pageCount ? `${material.pageCount} 頁 · ` : ''}{material.characterCount.toLocaleString()} 字 · {formatBytes(material.size)}</small></span>{expandedMaterial === material.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>{material.warning && <p className="warning"><CircleAlert size={14} />{material.warning}</p>}{material.securityWarning && <p className="warning security-warning"><CircleAlert size={14} />{material.securityWarning}</p>}{expandedMaterial === material.id && <div className="material-preview">{material.chunks.slice(0, 3).map(chunk => <div key={chunk.id}><b>{chunk.pageNumber ? `第 ${chunk.pageNumber} 頁` : chunk.id}</b><p>{chunk.text.slice(0, 550)}{chunk.text.length > 550 ? '…' : ''}</p></div>)}{material.chunks.length > 3 && <small>另有 {material.chunks.length - 3} 個片段</small>}</div>}<button className="remove" onClick={() => setMaterials(state => state.filter(d => d.id !== material.id))} aria-label={`移除 ${material.name}`}><X size={15} /></button></article>)}</div></div>
         <section className="past-exam-panel" aria-labelledby="past-exam-title"><div className="past-exam-heading"><div><p>PAST EXAM GUIDANCE · 選填</p><h3 id="past-exam-title">匯入考古題(PDF格式)</h3><span>考古題只用來引導題型或避開重複，不會作為答案與引文來源。</span></div><label className="secondary past-exam-upload"><Upload size={16} />{busy === 'past-exam' ? '正在解析考古題…' : '選擇考古題'}<input ref={pastExamInput} aria-label="匯入考古題檔案" type="file" accept=".pdf,.txt,.md,.markdown" multiple disabled={!!busy} onChange={e => e.target.files && void importPastExamFiles(e.target.files)} /></label></div>
           <div className="past-exam-strategy" role="radiogroup" aria-label="考古題使用方式"><button role="radio" aria-checked={pastExamStrategy === 'transform'} className={pastExamStrategy === 'transform' ? 'active' : ''} onClick={() => setPastExamStrategy('transform')}><strong>根據考古題變換題型</strong><small>保留評量概念，改寫題型、情境與問法</small></button><button role="radio" aria-checked={pastExamStrategy === 'avoid'} className={pastExamStrategy === 'avoid' ? 'active' : ''} onClick={() => setPastExamStrategy('avoid')}><strong>避開考古題</strong><small>避開既有考點與相似問法，優先命題未考內容</small></button></div>
           {pastExams.length > 0 && <div className="past-exam-files">{pastExams.map(document => <span key={document.id}><FileText size={15} /><b>{document.name}</b><small>{document.characterCount.toLocaleString()} 字</small><button onClick={() => setPastExams(state => state.filter(item => item.id !== document.id))} aria-label={`移除考古題 ${document.name}`}><X size={14} /></button></span>)}</div>}

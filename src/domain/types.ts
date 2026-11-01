@@ -51,6 +51,8 @@ export interface MaterialDocument {
   chunks: MaterialChunk[];
   createdAt: string;
   warning?: string;
+  /** Set when local scanning finds instructions that must not be sent to the model. */
+  securityWarning?: string;
 }
 
 export interface GenerationSettings {
