@@ -21,7 +21,7 @@ const steps = [
   ['AI 設定', '連接模型'], ['加入教材', '本機解析'], ['出題設定', '建立題目'], ['審核題庫', '教師把關'], ['匯出試卷', '列印與測驗'],
 ] as const;
 const providerIds: ProviderId[] = ['cgu', 'openai', 'xai', 'gemini'];
-const defaultModels: Record<ProviderId, string> = { cgu: '', openai: 'gpt-4.1-mini', xai: 'grok-3-mini', gemini: 'gemini-2.5-flash' };
+const defaultModels: Record<ProviderId, string> = { cgu: '', openai: 'gpt-4.1-mini', xai: 'grok-3-mini', gemini: 'gemini-flash-latest' };
 const MODEL_CONFIG_STORAGE_KEY = 'teacher-exam-studio.model-config.v1';
 const defaultSettings: GenerationSettings = { counts: { single: 5, multiple: 2, true_false: 2, short_answer: 1 }, difficulty: 'medium', points: 10, language: 'zh-TW', instructions: '' };
 const defaultExam: ExamMeta = { title: '課堂學習評量', subtitle: '', duration: 50, seed: 2026 };
