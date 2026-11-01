@@ -14,7 +14,7 @@ QuizGenerator 是依照 [`AI_Exam_Generator_PRD.md`](./AI_Exam_Generator_PRD.md)
 ## 功能
 
 1. 收合式 AI 設定按鈕；CGU LLM Gateway、OpenAI、xAI / Grok、Google Gemini Provider Adapter
-2. CGU 模型自動偵測下拉選單，首次偵測預設選擇 API 回傳的最新 Luna
+2. CGU 模型自動偵測下拉選單僅顯示 `gemma-4-26b-a4b-it`、`gpt-oss:20b`、`gpt-oss-120b`，預設選擇 `gpt-oss:20b`
 3. PDF.js Web Worker、CMap 與 standard fonts；TXT / Markdown / 貼上文字
 4. 內建「AI 概念入門」純文字範例，並可匯入考古題後選擇「變換題型」或「避開考古題」
 5. 單選、複選、是非與簡答題；可選擇繁體中文或英文命題，並提供額外命題要求快速範例

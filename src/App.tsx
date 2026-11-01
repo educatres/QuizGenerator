@@ -8,7 +8,7 @@ import {
 import type { Difficulty, ExamMeta, GenerationLanguage, GenerationSettings, MaterialDocument, PastExamStrategy, ProviderId, Question, QuestionStatus, QuestionType } from './domain/types';
 import { difficultyLabels, generationLanguageLabels, now, questionTypeLabels, uid } from './domain/types';
 import { groupQuestionsByGeneration, LEGACY_GENERATION_ID } from './domain/generationBatches';
-import { adapters, clearAllSessionKeys, clearSessionKey, hasSessionKey, setSessionKey } from './providers';
+import { adapters, CGU_MODEL_IDS, clearAllSessionKeys, clearSessionKey, hasSessionKey, setSessionKey } from './providers';
 import type { ModelOption } from './providers/types';
 import { extractPdf, extractTextFile, fromPastedText } from './services/pdfExtract';
 import { clearSnapshot, loadSnapshot, saveSnapshot } from './services/localDb';
@@ -42,7 +42,9 @@ function formatGenerationTime(value: string) {
 function storedModelConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(MODEL_CONFIG_STORAGE_KEY) || '{}') as { provider?: ProviderId; models?: Partial<Record<ProviderId, string>> };
-    return { provider: providerIds.includes(saved.provider as ProviderId) ? saved.provider as ProviderId : 'cgu' as ProviderId, models: { ...defaultModels, ...saved.models } };
+    const models = { ...defaultModels, ...saved.models };
+    if (!CGU_MODEL_IDS.includes(models.cgu as typeof CGU_MODEL_IDS[number])) models.cgu = defaultModels.cgu;
+    return { provider: providerIds.includes(saved.provider as ProviderId) ? saved.provider as ProviderId : 'cgu' as ProviderId, models };
   } catch { return { provider: 'cgu' as ProviderId, models: defaultModels }; }
 }
 
@@ -121,10 +123,10 @@ export function App() {
     try {
       const list = await adapter.listModels(); setModels(state => ({ ...state, [provider]: list }));
       const current = selectedModels[provider];
-      const selected = list.some(model => model.id === current) ? current : list[0]?.id || '';
+      const preferredCguModel = provider === 'cgu' && list.some(model => model.id === defaultModels.cgu) ? defaultModels.cgu : undefined;
+      const selected = list.some(model => model.id === current) ? current : preferredCguModel || list[0]?.id || '';
       setSelectedModels(state => ({ ...state, [provider]: selected }));
-      const luna = provider === 'cgu' && list[0] && /luna/i.test(`${list[0].id} ${list[0].label}`);
-      setConnectionMessage(list.length ? `已偵測 ${list.length} 個模型。${luna && selected === list[0].id ? `已預設選擇最新 Luna：${list[0].label}。` : ''}請再測試連線確認生成權限。` : 'API 沒有回傳可用模型。');
+      setConnectionMessage(list.length ? `已偵測 ${list.length} 個模型。${preferredCguModel && selected === preferredCguModel ? `已預設選擇 ${defaultModels.cgu}。` : ''}請再測試連線確認生成權限。` : 'API 沒有回傳可用模型。');
     } catch (error) { setConnectionMessage((error as Error).message); }
     finally { setBusy(''); }
   }
@@ -314,7 +316,7 @@ export function App() {
         <div className="key-input"><KeyRound size={17} /><input id="api-key" type={showKey ? 'text' : 'password'} autoComplete="off" value={keyDraft} placeholder={hasSessionKey(provider) ? '••••••••（輸入新金鑰可取代）' : '貼上你的 API Key'} onChange={e => setKeyDraft(e.target.value)} /><button disabled={!keyDraft} onClick={() => setShowKey(!showKey)} aria-label={showKey ? '隱藏金鑰' : '顯示金鑰'}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
         <div className="key-actions"><a href={adapter.keyUrl} target="_blank" rel="noreferrer">取得 {adapter.name} API Key ↗</a><div>{hasSessionKey(provider) && <button className="text-danger" onClick={() => { clearSessionKey(provider); setConnected(state => ({ ...state, [provider]: false })); setSelectedModels(state => ({ ...state, [provider]: '' })); setModels(state => ({ ...state, [provider]: [] })); setConnectionMessage('已清除這個瀏覽器保存的 API Key。'); }}><Trash2 size={13} />清除 API Key</button>}<button className="secondary" disabled={!keyDraft.trim() || !!busy} onClick={saveKey}>儲存 API Key</button></div></div>
         <div className="divider" />
-        <div className="model-setting-heading"><div><strong>選擇模型</strong><span>{provider === 'cgu' ? '偵測後會優先選擇最新版 Luna，你仍可自行更換。' : '先取得帳戶可用模型，再選擇要使用的模型。'}</span></div><button className="secondary" disabled={!!busy || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void listModels()}>{busy === 'models' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}偵測模型</button></div>
+        <div className="model-setting-heading"><div><strong>選擇模型</strong><span>{provider === 'cgu' ? 'CGU 僅顯示 gemma-4-26b-a4b-it、gpt-oss:20b、gpt-oss-120b，預設選擇 gpt-oss:20b。' : '先取得帳戶可用模型，再選擇要使用的模型。'}</span></div><button className="secondary" disabled={!!busy || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void listModels()}>{busy === 'models' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}偵測模型</button></div>
         {(models[provider]?.length ?? 0) > 0 ? <label className="stack-field model-select-field"><span>可用模型</span><select aria-label="可用模型" value={selectedModels[provider]} onChange={e => setSelectedModels(state => ({ ...state, [provider]: e.target.value }))}>{models[provider]!.map(model => <option key={model.id} value={model.id}>{model.label}{model.label !== model.id ? `（${model.id}）` : ''}</option>)}</select></label> : provider === 'cgu' ? <div className="model-placeholder">{selectedModels.cgu ? <>已保存模型：<strong>{selectedModels.cgu}</strong>。按「偵測模型」更新清單。</> : '尚未偵測 CGU 模型。儲存 Key 後按「偵測模型」。'}</div> : <label className="stack-field model-select-field"><span>模型 ID</span><input value={selectedModels[provider]} onChange={e => setSelectedModels(state => ({ ...state, [provider]: e.target.value.trim() }))} placeholder="輸入模型 ID，或按偵測模型" /></label>}
         {connectionMessage && <div className={`inline-message ${connected[provider] ? 'success' : ''}`}>{connected[provider] ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />}<span>{connectionMessage}</span></div>}
       </div>

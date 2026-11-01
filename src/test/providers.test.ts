@@ -29,6 +29,20 @@ describe('provider preferences', () => {
     expect(sortCguModels([{ id: 'luna-2.10', label: 'Luna 2.10' }, { id: 'luna-2.9', label: 'Luna 2.9' }])[0].id).toBe('luna-2.10');
   });
 
+  it('limits CGU models to the supported model allowlist in display order', async () => {
+    const { filterCguModels } = await import('../providers');
+    expect(filterCguModels([
+      { id: 'gpt-oss-120b', label: 'GPT OSS 120B' },
+      { id: 'other-model', label: 'Other model' },
+      { id: 'gpt-oss:20b', label: 'GPT OSS 20B' },
+      { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4' },
+    ])).toEqual([
+      { id: 'gemma-4-26b-a4b-it', label: 'gemma-4-26b-a4b-it' },
+      { id: 'gpt-oss:20b', label: 'gpt-oss:20b' },
+      { id: 'gpt-oss-120b', label: 'gpt-oss-120b' },
+    ]);
+  });
+
   it('uses max_completion_tokens for the CGU connection test', async () => {
     const providers = await import('../providers');
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));

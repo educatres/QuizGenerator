@@ -6,6 +6,8 @@ import type { GenerateRequest, ModelOption, ProviderAdapter } from './types';
 
 const API_KEYS_STORAGE_KEY = 'teacher-exam-studio.api-keys.v1';
 
+export const CGU_MODEL_IDS = ['gemma-4-26b-a4b-it', 'gpt-oss:20b', 'gpt-oss-120b'] as const;
+
 function storedKeys(): Partial<Record<ProviderId, string>> {
   try {
     const parsed = JSON.parse(localStorage.getItem(API_KEYS_STORAGE_KEY) || '{}') as Partial<Record<ProviderId, unknown>>;
@@ -87,6 +89,14 @@ export function sortCguModels(models: ModelOption[]): ModelOption[] {
   }).map(({ model }) => model);
 }
 
+export function filterCguModels(models: ModelOption[]): ModelOption[] {
+  const byId = new Map(models.map(model => [model.id, model]));
+  return CGU_MODEL_IDS.flatMap(id => {
+    const model = byId.get(id);
+    return model ? [{ ...model, label: id }] : [];
+  });
+}
+
 async function fetchJson(provider: ProviderId, path: string, init: RequestInit = {}) {
   const key = getKey(provider);
   const url = provider === 'gemini' ? `${config[provider].baseUrl}${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(key)}` : `${config[provider].baseUrl}${path}`;
@@ -147,7 +157,7 @@ function createAdapter(id: ProviderId): ProviderAdapter {
       const data = await fetchJson(id, id === 'xai' ? '/language-models' : '/models');
       const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
       const mapped = list.map((m: Record<string, unknown>) => ({ id: String(m.id ?? m.name ?? '').replace(/^models\//, ''), label: String(m.displayName || m.name || m.id || ''), created: modelTimestamp(m) })).filter((m: ModelOption) => m.id);
-      return id === 'cgu' ? sortCguModels(mapped) : mapped.sort((a: ModelOption, b: ModelOption) => a.id.localeCompare(b.id));
+      return id === 'cgu' ? filterCguModels(mapped) : mapped.sort((a: ModelOption, b: ModelOption) => a.id.localeCompare(b.id));
     },
     async testGeneration(model: string) {
       if (!model.trim()) throw new Error('請先選擇模型。');
