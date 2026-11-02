@@ -27,6 +27,11 @@ test('opens API settings on demand and persists a key in this browser', async ({
   const dialog = page.getByRole('dialog', { name: '連接你的 AI' });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator('.provider-endpoints code')).toHaveCount(4);
+  await expect(dialog.locator('.provider-tabs button.active')).toContainText('Google AI Studio');
+  await expect(dialog.locator('.provider-tabs').getByRole('button', { name: /OpenAI/ })).toBeDisabled();
+  await expect(dialog.locator('.provider-tabs').getByRole('button', { name: /Grok/ })).toBeDisabled();
+  await expect(dialog.getByText('Google AI Studio 建議用 gemini-flash-lite-latest 模型。')).toBeVisible();
+  await dialog.locator('.provider-tabs').getByRole('button', { name: /CGU/ }).click();
   await expect(dialog.getByRole('link', { name: 'air.cgu.edu.tw' })).toHaveAttribute('href', 'https://air.cgu.edu.tw/');
   await dialog.getByLabel('API Key').fill('test-browser-key');
   await dialog.getByRole('button', { name: '儲存 API Key' }).click();

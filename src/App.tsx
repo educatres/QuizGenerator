@@ -21,6 +21,7 @@ const steps = [
   ['AI 設定', '連接模型'], ['加入教材', '本機解析'], ['出題設定', '建立題目'], ['審核題庫', '教師把關'], ['匯出試卷', '列印與測驗'],
 ] as const;
 const providerIds: ProviderId[] = ['cgu', 'openai', 'xai', 'gemini'];
+const enabledProviderIds: ProviderId[] = ['cgu', 'gemini'];
 const defaultModels: Record<ProviderId, string> = { cgu: CGU_DEFAULT_MODEL, openai: '', xai: '', gemini: GOOGLE_DEFAULT_MODEL };
 const defaultBaseUrls: Record<ProviderId, string> = PROVIDER_DEFAULT_BASE_URLS;
 const MODEL_CONFIG_STORAGE_KEY = 'teacher-exam-studio.model-config.v1';
@@ -51,8 +52,8 @@ function storedModelConfig() {
     const baseUrls = { ...defaultBaseUrls, ...saved.baseUrls };
     if (!baseUrls.gemini || baseUrls.gemini === GOOGLE_AI_STUDIO_LEGACY_BASE_URL) baseUrls.gemini = GOOGLE_AI_STUDIO_BASE_URL;
     const reasoningEffort: ReasoningEffort = saved.reasoningEffort === 'low' || saved.reasoningEffort === 'high' ? saved.reasoningEffort : 'medium';
-    return { provider: providerIds.includes(saved.provider as ProviderId) ? saved.provider as ProviderId : 'cgu' as ProviderId, models, baseUrls, reasoningEffort };
-  } catch { return { provider: 'cgu' as ProviderId, models: defaultModels, baseUrls: defaultBaseUrls, reasoningEffort: 'medium' as ReasoningEffort }; }
+    return { provider: enabledProviderIds.includes(saved.provider as ProviderId) ? saved.provider as ProviderId : 'gemini' as ProviderId, models, baseUrls, reasoningEffort };
+  } catch { return { provider: 'gemini' as ProviderId, models: defaultModels, baseUrls: defaultBaseUrls, reasoningEffort: 'medium' as ReasoningEffort }; }
 }
 
 export function App() {
@@ -319,7 +320,7 @@ export function App() {
     {apiSettingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && setApiSettingsOpen(false)}><section className="api-settings-modal" role="dialog" aria-modal="true" aria-labelledby="api-settings-title">
       <header className="modal-heading"><div><p>LOCAL AI CONNECTION</p><h2 id="api-settings-title">連接你的 AI</h2><span>設定保存在這個瀏覽器；下次開啟可直接沿用。</span></div><button onClick={() => setApiSettingsOpen(false)} aria-label="關閉 AI 設定"><X size={19} /></button></header>
       <div className="modal-scroll">
-        <div className="provider-tabs">{providerIds.map(id => <button key={id} className={provider === id ? 'active' : ''} onClick={() => !busy && setProvider(id)} disabled={!!busy}><span>{id === 'cgu' ? '◈' : id === 'openai' ? '✳' : id === 'xai' ? '𝕏' : '✦'}</span>{adapters[id].name}{hasSessionKey(id) && <i />}</button>)}</div>
+        <div className="provider-tabs">{providerIds.map(id => <button key={id} className={provider === id ? 'active' : ''} onClick={() => !busy && enabledProviderIds.includes(id) && setProvider(id)} disabled={!!busy || !enabledProviderIds.includes(id)}><span>{id === 'cgu' ? '◈' : id === 'openai' ? '✳' : id === 'xai' ? '𝕏' : '✦'}</span>{adapters[id].name}{hasSessionKey(id) && <i />}</button>)}</div>
         <div className="provider-endpoints" aria-label="四個 AI Provider 的 API Base URL">{providerIds.map(id => <div className={provider === id ? 'active' : ''} key={id}><span>{adapters[id].name}</span><code>{baseUrls[id]}</code></div>)}</div>
         {provider === 'cgu' && <div className="cgu-key-notice"><KeyRound size={17} /><span>長庚大學師生，請到 <a href="https://air.cgu.edu.tw/" target="_blank" rel="noreferrer">air.cgu.edu.tw</a> 領取 CGU API Key。</span></div>}
         <div className="privacy-card"><ShieldCheck size={23} /><div><strong>API Key 儲存在你的瀏覽器</strong><p>請只在信任的個人裝置使用。金鑰不會進入教材、題庫、匯出檔或 GitHub，並可隨時清除。</p></div></div>
@@ -329,7 +330,7 @@ export function App() {
         <div className="divider" />
         <label className="stack-field endpoint-field"><span>API Base URL</span><input value={baseUrls[provider]} onChange={e => { setBaseUrls(state => ({ ...state, [provider]: e.target.value })); setModels(state => ({ ...state, [provider]: [] })); setConnected(state => ({ ...state, [provider]: false })); }} placeholder={defaultBaseUrls[provider]} /></label>
         {provider === 'cgu' && <label className="stack-field endpoint-field"><span>CGU 推理程度（預設：中）</span><select value={reasoningEffort} onChange={e => setReasoningEffort(e.target.value as ReasoningEffort)}><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>}
-        <div className="model-setting-heading"><div><strong>選擇模型</strong><span>{provider === 'cgu' ? 'CGU 僅顯示 gemma-4-26b-a4b-it、gpt-oss:20b、gpt-oss-120b，預設選擇 gpt-oss:20b。' : '先取得帳戶可用模型，再選擇要使用的模型。'}</span></div><button className="secondary" disabled={!!busy || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void listModels()}>{busy === 'models' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}偵測模型</button></div>
+        <div className="model-setting-heading"><div><strong>選擇模型</strong><span>{provider === 'cgu' ? 'CGU 僅顯示 gemma-4-26b-a4b-it、gpt-oss:20b、gpt-oss-120b，預設選擇 gpt-oss:20b。' : provider === 'gemini' ? 'Google AI Studio 建議用 gemini-flash-lite-latest 模型。' : '先取得帳戶可用模型，再選擇要使用的模型。'}</span></div><button className="secondary" disabled={!!busy || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void listModels()}>{busy === 'models' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}偵測模型</button></div>
         {(models[provider]?.length ?? 0) > 0 ? <label className="stack-field model-select-field"><span>可用模型</span><select aria-label="可用模型" value={selectedModels[provider]} onChange={e => setSelectedModels(state => ({ ...state, [provider]: e.target.value }))}>{models[provider]!.map(model => <option key={model.id} value={model.id}>{model.label}{model.label !== model.id ? `（${model.id}）` : ''}</option>)}</select></label> : provider === 'cgu' ? <div className="model-placeholder">{selectedModels.cgu ? <>已保存模型：<strong>{selectedModels.cgu}</strong>。按「偵測模型」更新清單。</> : '尚未偵測 CGU 模型。儲存 Key 後按「偵測模型」。'}</div> : <label className="stack-field model-select-field"><span>模型 ID</span><input value={selectedModels[provider]} onChange={e => setSelectedModels(state => ({ ...state, [provider]: e.target.value.trim() }))} placeholder="輸入模型 ID，或按偵測模型" /></label>}
         {connectionMessage && <div className={`inline-message ${connected[provider] ? 'success' : ''}`}>{connected[provider] ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />}<span>{connectionMessage}</span></div>}
       </div>
