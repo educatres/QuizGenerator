@@ -26,7 +26,7 @@ test('opens API settings on demand and persists a key in this browser', async ({
   await page.locator('.ai-settings-toggle').click();
   const dialog = page.getByRole('dialog', { name: '連接你的 AI' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('BASE URL')).toHaveCount(0);
+  await expect(dialog.locator('.provider-endpoints code')).toHaveCount(4);
   await expect(dialog.getByRole('link', { name: 'air.cgu.edu.tw' })).toHaveAttribute('href', 'https://air.cgu.edu.tw/');
   await dialog.getByLabel('API Key').fill('test-browser-key');
   await dialog.getByRole('button', { name: '儲存 API Key' }).click();

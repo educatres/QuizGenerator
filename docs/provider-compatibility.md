@@ -4,10 +4,10 @@ QuizGenerator 是純前端 BYOK 應用程式。瀏覽器直接以 HTTPS 呼叫�
 
 | Provider | Models | Generate | Key policy | Notes |
 | --- | --- | --- | --- | --- |
-| CGU LLM Gateway | `GET /models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 模型以下拉選單僅顯示 `gemma-4-26b-a4b-it`、`gpt-oss:20b`、`gpt-oss-120b`；預設 `gpt-oss:20b`；使用 `max_completion_tokens` 且不覆寫模型預設 `temperature`；需允許 GitHub Pages 來源的 CORS |
+| CGU LLM Gateway | `GET /models` | Luna `POST /responses`; other models `POST /chat/completions` | Bearer token | Allowed models: `gemma-4-26b-a4b-it`, `gpt-oss:20b`, `gpt-oss-120b`; default `gpt-oss:20b` |
 | OpenAI | `GET /models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 瀏覽器直連政策可能依帳戶／端點而異 |
-| xAI / Grok | `GET /language-models` | `POST /chat/completions` | Bearer；依 Provider 保存於瀏覽器 | 模型清單可見不等於具有生成權限 |
-| Google Gemini | `GET /models` | `models/{id}:generateContent` | Query key；依 Provider 保存於瀏覽器 | 使用 JSON response MIME type |
+| xAI / Grok | `GET /models` | `POST /chat/completions` | Bearer token | OpenAI-compatible endpoint |
+| Google AI Studio | `GET /models` (Bearer) | Default `POST /chat/completions`; legacy `models/{id}:generateContent` | Bearer on OpenAI-compatible endpoint; query `key` on legacy endpoint | Default Base URL: `https://generativelanguage.googleapis.com/v1beta/openai` |
 
 錯誤提示會區分 401/403、429、5xx、無法連線與 CORS。因瀏覽器無法可靠地判別「斷線」和「CORS 阻擋」，兩者會顯示在同一類訊息中。
 

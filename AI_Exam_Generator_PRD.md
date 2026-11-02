@@ -36,10 +36,10 @@
 
 | Provider | 預設 Base URL | 模型列舉 | 出題路由（MVP 候選） |
 | --- | --- | --- | --- |
-| CGU LLM Gateway | `https://air.cgu.edu.tw/cgullmapi/v1` | `GET /models` | `POST /chat/completions`；不支援的模型另試 `/responses` |
-| OpenAI | `https://api.openai.com/v1` | `GET /models` | `POST /chat/completions`；逐模型辨識需用 `/responses` 者 |
-| xAI / Grok | `https://api.x.ai/v1` | `GET /models` 或 `GET /language-models` | `POST /chat/completions`（兼容但屬舊式介面；保留 `/responses` 擴充能力） |
-| Google AI Studio / Gemini | `https://generativelanguage.googleapis.com/v1beta` | `GET /models`，過濾具文字生成能力的模型 | 原生 `models/{id}:generateContent`；亦可評估 OpenAI 相容 API `.../v1beta/openai/` |
+| CGU LLM Gateway | `https://air.cgu.edu.tw/cgullmapi/v1` | `GET /models` | Luna `POST /responses`; other models `POST /chat/completions` |
+| OpenAI | `https://api.openai.com/v1` | `GET /models` | `POST /chat/completions` |
+| xAI / Grok | `https://api.x.ai/v1` | `GET /models` | `POST /chat/completions` |
+| Google AI Studio / Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GET /models` | Default `POST /chat/completions`; legacy `models/{id}:generateContent` |
 
 - 每家有獨立 `ProviderAdapter`，內含 `listModels`、`testGeneration`、`generateQuestions`、`normalizeError`。不得以一段散落全專案的 `fetch` 處理所有供應商。
 - **兩階段連線測試**：先檢查認證及模型列舉；再對所選模型發送極短的實際生成請求。第一階段成功不代表模型可出題。

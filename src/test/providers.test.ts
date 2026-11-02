@@ -43,26 +43,27 @@ describe('provider preferences', () => {
     ]);
   });
 
-  it('uses max_completion_tokens for the CGU connection test', async () => {
+  it('uses the Responses API for a CGU Luna connection test', async () => {
     const providers = await import('../providers');
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
     providers.setSessionKey('cgu', 'test-key-123');
     await providers.adapters.cgu.testGeneration('luna-latest');
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(request.max_completion_tokens).toBe(8);
-    expect(request).not.toHaveProperty('max_tokens');
+    expect(fetchMock.mock.calls[0][0]).toContain('/responses');
+    expect(request.max_output_tokens).toBe(4096);
+    expect(request.reasoning).toEqual({ effort: 'medium' });
     vi.unstubAllGlobals();
   });
 
-  it('does not override the default temperature when generating with CGU', async () => {
+  it('uses the Responses API without a temperature for CGU Luna generation', async () => {
     const providers = await import('../providers');
     const generated = { questions: [{
       type: 'true_false', stem: '這是一個有效題目嗎？', correctBoolean: true,
       explanation: '是。', sources: [{ documentId: 'doc', chunkId: 'doc-c1', quote: '教材' }],
       difficulty: 'easy', points: 5,
     }] };
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(generated) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(generated) }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
     providers.setSessionKey('cgu', 'test-key-123');
     await providers.adapters.cgu.generateQuestions({
@@ -71,8 +72,9 @@ describe('provider preferences', () => {
       settings: { counts: { single: 0, multiple: 0, true_false: 1, short_answer: 0 }, difficulty: 'easy', points: 5, language: 'zh-TW', instructions: '' },
     });
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(fetchMock.mock.calls[0][0]).toContain('/responses');
     expect(request).not.toHaveProperty('temperature');
-    expect(request.response_format).toEqual({ type: 'json_object' });
+    expect(request.reasoning).toEqual({ effort: 'medium' });
     vi.unstubAllGlobals();
   });
 
@@ -84,8 +86,8 @@ describe('provider preferences', () => {
       difficulty: 'easy', points: 5,
     }] };
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ questions: [{ ...valid.questions[0], explanation: ['解析陣列'] }] }) } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ output_text: JSON.stringify({ questions: [{ ...valid.questions[0], explanation: ['解析陣列'], sources: [{ ...valid.questions[0].sources[0], pageNumber: '3' }] }] }) }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ output_text: JSON.stringify(valid) }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     providers.setSessionKey('cgu', 'test-key-123');
 
@@ -98,7 +100,10 @@ describe('provider preferences', () => {
     expect(result).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const retryRequest = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
-    expect(retryRequest.messages[1].content).toContain('不要把字串包在陣列中');
+    expect(retryRequest.input).toContain('不要把字串包在陣列中');
+    expect(retryRequest.input).toContain('第一次回覆的原文');
+    expect(retryRequest.input).toContain('sources.pageNumber');
+    expect(retryRequest.input).toContain('"pageNumber":"3"');
     vi.unstubAllGlobals();
   });
 });
