@@ -26,7 +26,6 @@ test('opens API settings on demand and persists a key in this browser', async ({
   await page.locator('.ai-settings-toggle').click();
   const dialog = page.getByRole('dialog', { name: '連接你的 AI' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator('.provider-endpoints code')).toHaveCount(4);
   await expect(dialog.locator('.provider-tabs button.active')).toContainText('Google AI Studio');
   await expect(dialog.locator('.provider-tabs').getByRole('button', { name: /OpenAI/ })).toBeDisabled();
   await expect(dialog.locator('.provider-tabs').getByRole('button', { name: /Grok/ })).toBeDisabled();

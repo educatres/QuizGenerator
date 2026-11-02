@@ -321,7 +321,6 @@ export function App() {
       <header className="modal-heading"><div><p>LOCAL AI CONNECTION</p><h2 id="api-settings-title">連接你的 AI</h2><span>設定保存在這個瀏覽器；下次開啟可直接沿用。</span></div><button onClick={() => setApiSettingsOpen(false)} aria-label="關閉 AI 設定"><X size={19} /></button></header>
       <div className="modal-scroll">
         <div className="provider-tabs">{providerIds.map(id => <button key={id} className={provider === id ? 'active' : ''} onClick={() => !busy && enabledProviderIds.includes(id) && setProvider(id)} disabled={!!busy || !enabledProviderIds.includes(id)}><span>{id === 'cgu' ? '◈' : id === 'openai' ? '✳' : id === 'xai' ? '𝕏' : '✦'}</span>{adapters[id].name}{hasSessionKey(id) && <i />}</button>)}</div>
-        <div className="provider-endpoints" aria-label="四個 AI Provider 的 API Base URL">{providerIds.map(id => <div className={provider === id ? 'active' : ''} key={id}><span>{adapters[id].name}</span><code>{baseUrls[id]}</code></div>)}</div>
         {provider === 'cgu' && <div className="cgu-key-notice"><KeyRound size={17} /><span>長庚大學師生，請到 <a href="https://air.cgu.edu.tw/" target="_blank" rel="noreferrer">air.cgu.edu.tw</a> 領取 CGU API Key。</span></div>}
         <div className="privacy-card"><ShieldCheck size={23} /><div><strong>API Key 儲存在你的瀏覽器</strong><p>請只在信任的個人裝置使用。金鑰不會進入教材、題庫、匯出檔或 GitHub，並可隨時清除。</p></div></div>
         <label className="field-label" htmlFor="api-key">API Key <span>{hasSessionKey(provider) ? '這個瀏覽器已保存' : '尚未設定'}</span></label>
