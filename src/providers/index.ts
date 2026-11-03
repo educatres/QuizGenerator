@@ -156,7 +156,7 @@ export function preferredGoogleModel(models: ModelOption[]) {
     })[0].id;
 }
 
-async function requestJson(url: string, init: RequestInit, timeoutMs = 240_000) {
+async function requestJson(url: string, init: RequestInit, timeoutMs = 360_000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const externalSignal = init.signal;
