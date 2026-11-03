@@ -80,7 +80,9 @@ export function App() {
   const [reviewFilter, setReviewFilter] = useState<QuestionStatus | 'all'>('all');
   const [activeGenerationId, setActiveGenerationId] = useState<string>();
   const [reviewFocus, setReviewFocus] = useState<{ id: string; token: number }>();
-  const [busy, setBusy] = useState('');
+  const [localBusy, setBusy] = useState('');
+  const [apiBusy, setApiBusy] = useState('');
+  const busy = apiBusy || localBusy;
   const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; text: string }>();
   const [hydrated, setHydrated] = useState(false);
   const generationController = useRef<AbortController | undefined>(undefined);
@@ -129,7 +131,7 @@ export function App() {
   }
   async function listModels() {
     if (keyDraft.trim()) saveKey();
-    setBusy('models'); setConnectionMessage('');
+    setApiBusy('models'); setConnectionMessage('');
     try {
       const list = await adapter.listModels(baseUrls[provider]); setModels(state => ({ ...state, [provider]: list }));
       const current = selectedModels[provider];
@@ -139,14 +141,14 @@ export function App() {
       setSelectedModels(state => ({ ...state, [provider]: selected }));
       setConnectionMessage(list.length ? `已偵測 ${list.length} 個模型。${preferredCguModel && selected === preferredCguModel ? `已預設選擇 ${defaultModels.cgu}。` : ''}請再測試連線確認生成權限。` : 'API 沒有回傳可用模型。');
     } catch (error) { setConnectionMessage((error as Error).message); }
-    finally { setBusy(''); }
+    finally { setApiBusy(''); }
   }
   async function testConnection() {
     if (keyDraft.trim()) saveKey();
-    setBusy('test'); setConnectionMessage('');
+    setApiBusy('test'); setConnectionMessage('');
     try { await adapter.testGeneration(selectedModels[provider], baseUrls[provider], reasoningEffort); setConnected(state => ({ ...state, [provider]: true })); setConnectionMessage('連線成功，所選模型已通過文字生成測試。'); }
     catch (error) { setConnected(state => ({ ...state, [provider]: false })); setConnectionMessage((error as Error).message); }
-    finally { setBusy(''); }
+    finally { setApiBusy(''); }
   }
 
   async function importFiles(files: FileList | File[]) {
@@ -209,7 +211,7 @@ export function App() {
     if (!hasSessionKey(provider)) { setApiSettingsOpen(true); setStep(0); return announce('請先設定 API Key；設定面板已為你開啟。', 'error'); }
     if (!selectedModels[provider]) { setApiSettingsOpen(true); setStep(0); return announce('請先偵測並選擇模型。', 'error'); }
     if (totalRequested(settings) < 1 || totalRequested(settings) > 50) return announce('一次請產生 1–50 題。', 'error');
-    const controller = new AbortController(); generationController.current = controller; setBusy('generate');
+    const controller = new AbortController(); generationController.current = controller; setApiBusy('generate');
     try {
       const generated = await adapter.generateQuestions({ model: selectedModels[provider], baseUrl: baseUrls[provider], reasoningEffort, chunks: allChunks, settings, pastExamChunks, pastExamStrategy, signal: controller.signal });
       const verified = reconcileQuestionSources(generated, allChunks);
@@ -218,7 +220,7 @@ export function App() {
       const enriched: Question[] = verified.questions.map(q => ({ ...q, id: uid(), generationId, status: 'candidate', revision: 1, providerId: provider, modelId: selectedModels[provider], createdAt: generatedAt }));
       setQuestions(state => [...state, ...enriched]); setActiveGenerationId(generationId); setReviewFilter('all'); setStep(3); announce(`已建立 ${enriched.length} 題候選題${verified.repairedCount ? `，並校正 ${verified.repairedCount} 則來源引文` : ''}，請逐題審核。`);
     } catch (error) { announce((error as Error).message, 'error'); }
-    finally { setBusy(''); generationController.current = undefined; }
+    finally { setApiBusy(''); generationController.current = undefined; }
   }
 
   function updateQuestion(id: string, patch: Partial<Question>) { setQuestions(state => state.map(q => q.id === id ? { ...q, ...patch, revision: q.revision + 1 } : q)); }
@@ -299,7 +301,7 @@ export function App() {
       {step === 2 && <section className="panel"><PageHeading eyebrow="STEP 03 · QUESTION BLUEPRINT" title="設定題型與難度" description="AI 產生的都是候選題；答案、引文與評分準則需由教師在下一步確認。" />
         <div className="generation-grid"><div className="settings-card"><h3>題型與題數</h3>{(Object.keys(settings.counts) as QuestionType[]).map(type => <label className="count-row" key={type}><span>{questionTypeLabels[type]}<small>{type === 'single' ? '恰有一個正解' : type === 'multiple' ? '可有多個正解' : type === 'true_false' ? '正確或錯誤' : '參考答案與評分準則'}</small></span><input type="number" min="0" max="25" value={settings.counts[type]} onChange={e => setSettings(s => ({ ...s, counts: { ...s.counts, [type]: Math.max(0, Number(e.target.value)) } }))} /></label>)}</div>
           <div className="settings-card"><h3>命題條件</h3><label className="stack-field"><span>出題語言</span><select aria-label="出題語言" value={settings.language} onChange={e => setSettings(s => ({ ...s, language: e.target.value as GenerationLanguage }))}>{(Object.keys(generationLanguageLabels) as GenerationLanguage[]).map(language => <option value={language} key={language}>{generationLanguageLabels[language]}</option>)}</select></label><label className="stack-field"><span>整體難度</span><select value={settings.difficulty} onChange={e => setSettings(s => ({ ...s, difficulty: e.target.value as Difficulty }))}>{(Object.keys(difficultyLabels) as Difficulty[]).map(d => <option value={d} key={d}>{difficultyLabels[d]}</option>)}</select></label><label className="stack-field"><span>每題預設配分</span><input type="number" min="1" max="100" value={settings.points} onChange={e => setSettings(s => ({ ...s, points: Number(e.target.value) }))} /></label><label className="stack-field"><span>額外命題要求</span><textarea rows={6} value={settings.instructions} onChange={e => setSettings(s => ({ ...s, instructions: e.target.value }))} placeholder="可自行輸入，或點選下方快速範例…" /></label><div className="instruction-examples"><span>快速範例（可複選）</span>{instructionExamples.map(example => { const selected = settings.instructions.split('\n').map(line => line.trim()).includes(example); return <button key={example} type="button" aria-pressed={selected} className={selected ? 'active' : ''} onClick={() => toggleInstructionExample(example)}>{selected && <Check size={13} />}{example}</button>; })}</div></div>
-          <aside className="generation-summary"><Sparkles size={26} /><span>這次將產生</span><strong>{totalRequested(settings)}</strong><b>題候選題</b><dl><div><dt>出題語言</dt><dd>{generationLanguageLabels[settings.language]}</dd></div><div><dt>教材</dt><dd>{materials.length} 份</dd></div><div><dt>文字片段</dt><dd>{allChunks.length} 個</dd></div>{pastExams.length > 0 && <div><dt>考古題策略</dt><dd>{pastExamStrategy === 'transform' ? '變換題型' : '避開考古題'}</dd></div>}<div><dt>AI</dt><dd>{adapter.name}</dd></div><div><dt>模型</dt><dd>{selectedModels[provider] || '未選擇'}</dd></div></dl>{!hasSessionKey(provider) && <p className="warning"><CircleAlert size={14} />尚未設定 API Key；按下產生題目時會自動開啟設定面板。</p>}<button className="generate-button" disabled={busy === 'generate' || !allChunks.length} onClick={() => void generate()}>{busy === 'generate' ? <><LoaderCircle className="spin" />正在閱讀教材與命題…</> : <><Sparkles />產生候選題</>}</button>{busy === 'generate' && <button className="cancel" onClick={() => generationController.current?.abort()}>取消請求</button>}</aside></div>
+          <aside className="generation-summary"><Sparkles size={26} /><span>這次將產生</span><strong>{totalRequested(settings)}</strong><b>題候選題</b><dl><div><dt>出題語言</dt><dd>{generationLanguageLabels[settings.language]}</dd></div><div><dt>教材</dt><dd>{materials.length} 份</dd></div><div><dt>文字片段</dt><dd>{allChunks.length} 個</dd></div>{pastExams.length > 0 && <div><dt>考古題策略</dt><dd>{pastExamStrategy === 'transform' ? '變換題型' : '避開考古題'}</dd></div>}<div><dt>AI</dt><dd>{adapter.name}</dd></div><div><dt>模型</dt><dd>{selectedModels[provider] || '未選擇'}</dd></div></dl>{!hasSessionKey(provider) && <p className="warning"><CircleAlert size={14} />尚未設定 API Key；按下產生題目時會自動開啟設定面板。</p>}<button className="generate-button" disabled={!!apiBusy || !allChunks.length} onClick={() => void generate()}>{busy === 'generate' ? <><LoaderCircle className="spin" />正在閱讀教材與命題…</> : <><Sparkles />產生候選題</>}</button>{busy === 'generate' && <button className="cancel" onClick={() => generationController.current?.abort()}>取消請求</button>}</aside></div>
         <footer className="panel-actions"><button className="secondary" onClick={() => setStep(1)}><ArrowLeft size={16} />上一步</button><span className="spacer" />{questions.length > 0 && <button className="secondary" onClick={() => setStep(3)}>查看已有 {questions.length} 題<ArrowRight size={16} /></button>}</footer>
       </section>}
 
@@ -334,7 +336,8 @@ export function App() {
       </div>
       <footer className="modal-actions"><span>測試會送出一則「只回覆 OK」，可能產生少量用量。</span><button className="secondary" disabled={!!busy || !selectedModels[provider] || (!hasSessionKey(provider) && !keyDraft)} onClick={() => void testConnection()}>{busy === 'test' ? <LoaderCircle className="spin" size={16} /> : <Wifi size={16} />}測試連線</button><button className="primary" onClick={() => setApiSettingsOpen(false)}>完成</button></footer>
     </section></div>}
-    {notice && <div className={`toast ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.kind === 'success' ? <CheckCircle2 /> : notice.kind === 'error' ? <XCircle /> : <LoaderCircle className={notice.kind === 'info' ? 'spin' : ''} />}<span>{notice.text}</span><button onClick={() => setNotice(undefined)} aria-label="關閉訊息"><X /></button></div>}
+    {apiBusy ? <div className="toast info" role="status"><LoaderCircle className="spin" aria-hidden="true" /><span>正在等待 API 回應，請勿關閉視窗。</span></div> :
+      notice && <div className={`toast ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.kind === 'success' ? <CheckCircle2 /> : notice.kind === 'error' ? <XCircle /> : <LoaderCircle className={notice.kind === 'info' ? 'spin' : ''} />}<span>{notice.text}</span><button onClick={() => setNotice(undefined)} aria-label="關閉訊息"><X /></button></div>}
   </div>;
 }
 

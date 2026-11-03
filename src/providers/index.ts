@@ -156,7 +156,7 @@ export function preferredGoogleModel(models: ModelOption[]) {
     })[0].id;
 }
 
-async function request(url: string, init: RequestInit, timeoutMs = 30_000): Promise<Response> {
+async function requestJson(url: string, init: RequestInit, timeoutMs = 240_000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const externalSignal = init.signal;
@@ -164,7 +164,8 @@ async function request(url: string, init: RequestInit, timeoutMs = 30_000): Prom
   if (externalSignal?.aborted) controller.abort();
   else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return await responseJson(response);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error(`API 請求逾時（${Math.round(timeoutMs / 1000)} 秒）或已取消。`);
     throw error;
@@ -200,7 +201,7 @@ async function fetchJson(provider: ProviderId, path: string, init: RequestInit =
     ? { ...authHeaders(key), ...init.headers }
     : { 'Content-Type': 'application/json', ...init.headers };
   try {
-    return await responseJson(await request(url, { ...init, headers }));
+    return await requestJson(url, { ...init, headers });
   } catch (error) {
     throw normalizeError(error, provider);
   }
